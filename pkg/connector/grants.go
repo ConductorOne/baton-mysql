@@ -87,7 +87,7 @@ func grantsForUserOrRole(
 				Resource: &v2.Resource{
 					Id: &v2.ResourceId{
 						ResourceType: resourceParts[0],
-						Resource:     resourceParts[1],
+						Resource:     fmt.Sprintf("%s:%s", resourceParts[0], resourceParts[1]),
 					},
 				},
 			},
