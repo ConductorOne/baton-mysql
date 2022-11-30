@@ -17,7 +17,7 @@ type ServerModel struct {
 
 func (c *Client) GetServerInfo(ctx context.Context) (*ServerModel, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("getting server")
+	l.Debug("getting server")
 
 	s := ServerModel{}
 	err := c.db.GetContext(ctx, &s, "SELECT @@hostname hostname, @@version version")

@@ -21,7 +21,7 @@ type TableModel struct {
 // ListTables scans and returns all the tables for the parent database.
 func (c *Client) ListTables(ctx context.Context, parentResourceID *v2.ResourceId, pager *Pager) ([]*TableModel, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("listing Tables")
+	l.Debug("listing Tables")
 
 	parent, err := newDbResourceID(parentResourceID.Resource)
 	if err != nil {

@@ -41,7 +41,7 @@ func (s *userSyncer) List(
 	for _, u := range users {
 		var annos annotations.Annotations
 
-		ut, err := sdk.NewUserTrait("", v2.UserTrait_Status_STATUS_ENABLED, nil, map[string]interface{}{
+		ut, err := sdk.NewUserTrait("", v2.UserTrait_Status_STATUS_ENABLED, map[string]interface{}{
 			"user":       u.User,
 			"host":       u.Host,
 			"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
