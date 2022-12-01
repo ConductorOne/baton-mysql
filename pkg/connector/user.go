@@ -50,7 +50,7 @@ func (s *userSyncer) List(
 		if err != nil {
 			return nil, "", nil, err
 		}
-		annos.Append(ut)
+		annos.Update(ut)
 
 		ret = append(ret, &v2.Resource{
 			DisplayName: fmt.Sprintf("%s@%s", u.User, u.Host),
