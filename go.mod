@@ -3,7 +3,7 @@ module github.com/conductorone/baton-mysql
 go 1.19
 
 require (
-	github.com/conductorone/baton-sdk v0.0.13
+	github.com/conductorone/baton-sdk v0.0.14
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/jmoiron/sqlx v1.3.5
