@@ -3,7 +3,7 @@ module github.com/conductorone/baton-mysql
 go 1.19
 
 require (
-	github.com/conductorone/baton-sdk v0.0.14
+	github.com/conductorone/baton-sdk v0.0.16
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/jmoiron/sqlx v1.3.5
@@ -64,7 +64,7 @@ require (
 	go.uber.org/ratelimit v0.2.0 // indirect
 	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/sys v0.2.0 // indirect
-	google.golang.org/genproto v0.0.0-20221130183247-a2ec334bae6f // indirect
+	google.golang.org/genproto v0.0.0-20221201164419-0e50fba7f41c // indirect
 	google.golang.org/grpc v1.51.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
