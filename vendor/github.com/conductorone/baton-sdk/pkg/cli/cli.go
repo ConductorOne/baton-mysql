@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	defaultConfigFilename = ".c1-%s"
-	envPrefix             = "c1"
+	defaultConfigFilename = ".baton-%s"
+	envPrefix             = "baton"
 	defaultLogLevel       = "info"
 	defaultLogFormat      = logging.LogFormatJSON
 )
@@ -92,14 +92,6 @@ func NewCmd[T any, PtrT *T](
 				return err
 			}
 
-			stdin, err := os.Stdin.Stat()
-			if err != nil {
-				return err
-			}
-			if stdin.Size() == 0 {
-				return fmt.Errorf("unexpected end of input")
-			}
-
 			var cfgStr string
 			scn := bufio.NewScanner(os.Stdin)
 			for scn.Scan() {
@@ -140,9 +132,9 @@ func NewCmd[T any, PtrT *T](
 
 	cmd.AddCommand(grpcServerCmd)
 
-	cmd.PersistentFlags().String("log-level", defaultLogLevel, "The log level: debug, info, warn, error ($C1_LOG_LEVEL)")
-	cmd.PersistentFlags().String("log-format", defaultLogFormat, "The output format for logs: json, console ($C1_LOG_FORMAT)")
-	cmd.PersistentFlags().StringP("file", "f", "sync.c1z", "The path to the c1z file to sync with ($C1_FILE)")
+	cmd.PersistentFlags().String("log-level", defaultLogLevel, "The log level: debug, info, warn, error ($BATON_LOG_LEVEL)")
+	cmd.PersistentFlags().String("log-format", defaultLogFormat, "The output format for logs: json, console ($BATON_LOG_FORMAT)")
+	cmd.PersistentFlags().StringP("file", "f", "sync.c1z", "The path to the c1z file to sync with ($BATON_FILE)")
 
 	return cmd, nil
 }

@@ -21,7 +21,7 @@ type ColumnModel struct {
 // ListColumns scans the server for all columns associated with the parent table.
 func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceId, pager *Pager) ([]*ColumnModel, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("listing columns")
+	l.Debug("listing columns")
 
 	parent, err := newDbResourceID(parentResourceID.Resource)
 	if err != nil {

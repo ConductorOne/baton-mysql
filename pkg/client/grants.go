@@ -21,7 +21,7 @@ type GlobalGrant struct {
 //	GRANT SELECT (USER, HOST, PRIV, WITH_GRANT_OPTION) ON mysql.global_grants TO user@host;
 func (c *Client) ListGlobalGrants(ctx context.Context, user string, host string) ([]*GlobalGrant, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("checking global grants")
+	l.Debug("checking global grants")
 
 	q := `SELECT USER, HOST, PRIV, WITH_GRANT_OPTION FROM mysql.global_grants WHERE USER=? AND HOST=?`
 

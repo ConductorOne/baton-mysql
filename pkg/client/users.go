@@ -122,7 +122,7 @@ func (c *Client) getUsersQuery(ctx context.Context) *strings.Builder {
 // ListUsers queries the server and fetches all the users for the given  page.
 func (c *Client) ListUsers(ctx context.Context, userType string, pager *Pager, collapseUsers bool) ([]*User, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("listing users", zap.String("user_type", userType))
+	l.Debug("listing users", zap.String("user_type", userType))
 
 	offset, limit, err := pager.Parse()
 	if err != nil {

@@ -21,7 +21,7 @@ type RoutineModel struct {
 // ListRoutines scans and returns all the routines associated with the parent database.
 func (c *Client) ListRoutines(ctx context.Context, parentResourceID *v2.ResourceId, pager *Pager) ([]*RoutineModel, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("listing routines")
+	l.Debug("listing routines")
 
 	parent, err := newDbResourceID(parentResourceID.Resource)
 	if err != nil {

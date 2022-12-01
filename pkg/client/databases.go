@@ -18,7 +18,7 @@ type DbModel struct {
 // ListDatabases scans and returns all the databases.
 func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Info("listing databases")
+	l.Debug("listing databases")
 
 	offset, limit, err := pager.Parse()
 	if err != nil {
