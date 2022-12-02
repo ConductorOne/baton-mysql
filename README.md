@@ -4,7 +4,7 @@
 
 `baton-mysql` is a connector for MySQL 5.7 and 8.* built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It connects to your MySQL cluster and syncs privilege information about what access is granted to various users and roles.
 
-Check out [Baton](https://github.com/conductorone/baton) to learn more about Baton.
+Check out [Baton](https://github.com/conductorone/baton) to learn more about the project in general.
 
 # Getting Started
 ## brew
