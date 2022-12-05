@@ -34,7 +34,7 @@ baton-mysql --connection-string "baton:baton-password@tcp(127.0.0.1:3306)/"
 baton resources
 ```
 
-#
+# Data Model
 
 `baton-mysql` will sync information about the following MySQL resources:
 
@@ -53,7 +53,7 @@ By default, the connector will introspect all databases that it has access to re
 - `mysql`
 - `sys`
 
-# Advanced setup
+# Advanced Setup
 
 1. Create a new user for the connector to connect to MySQL as. Be sure to create and save the secure password for this user:
 
