@@ -11,7 +11,7 @@ import (
 )
 
 var supportedReleases = []string{
-	"8", "5.7",
+	"8", "5.7", "10.",
 }
 
 type dbResourceID struct {
