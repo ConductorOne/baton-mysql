@@ -9,33 +9,33 @@ import (
 var (
 	resourceTypeServer = &v2.ResourceType{
 		Id:          client.ServerType,
-		DisplayName: titleCaser.String(client.ServerType),
+		DisplayName: titleCase(client.ServerType),
 	}
 	resourceTypeTable = &v2.ResourceType{
 		Id:          client.TableType,
-		DisplayName: titleCaser.String(client.TableType),
+		DisplayName: titleCase(client.TableType),
 	}
 	resourceTypeDatabase = &v2.ResourceType{
 		Id:          client.DatabaseType,
-		DisplayName: titleCaser.String(client.DatabaseType),
+		DisplayName: titleCase(client.DatabaseType),
 	}
 	resourceTypeColumn = &v2.ResourceType{
 		Id:          client.ColumnType,
-		DisplayName: titleCaser.String(client.ColumnType),
+		DisplayName: titleCase(client.ColumnType),
 	}
 
 	resourceTypeRoutine = &v2.ResourceType{
 		Id:          client.RoutineType,
-		DisplayName: titleCaser.String(client.RoutineType),
+		DisplayName: titleCase(client.RoutineType),
 	}
 	resourceTypeUser = &v2.ResourceType{
 		Id:          client.UserType,
-		DisplayName: titleCaser.String(client.UserType),
+		DisplayName: titleCase(client.UserType),
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
 	}
 	resourceTypeRole = &v2.ResourceType{
 		Id:          client.RoleType,
-		DisplayName: titleCaser.String(client.RoleType),
+		DisplayName: titleCase(client.RoleType),
 	}
 
 	allResourceTypes = []*v2.ResourceType{
