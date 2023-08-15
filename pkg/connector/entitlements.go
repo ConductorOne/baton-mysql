@@ -90,7 +90,7 @@ func getEntitlementDisplayName(ctx context.Context, e *entitlementTemplate, reso
 		return fmt.Sprintf("%s %s", upperDisplayName, rID)
 	case resourceTypeColumn.Id:
 		rParts := strings.Split(rID, ".")
-		return fmt.Sprintf("%s (%s) %s %s", strings.ToUpper(e.entitlement.DisplayName), rParts[len(rParts)-1], titleCaser.String(resource.Id.ResourceType), rID)
+		return fmt.Sprintf("%s (%s) %s %s", strings.ToUpper(e.entitlement.DisplayName), rParts[len(rParts)-1], titleCase(resource.Id.ResourceType), rID)
 	case resourceTypeRole.Id, resourceTypeUser.Id:
 		switch e.ID {
 		case "proxy_with_grant":
