@@ -13,7 +13,11 @@ import (
 	"golang.org/x/text/language"
 )
 
-var titleCaser = cases.Title(language.English)
+func titleCase(s string) string {
+	titleCaser := cases.Title(language.English)
+
+	return titleCaser.String(s)
+}
 
 // connectorImpl implements the ConnectorServer interface for syncing with a MySQL server.
 type connectorImpl struct {
