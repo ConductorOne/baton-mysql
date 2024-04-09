@@ -27,9 +27,15 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 	args := []interface{}{limit + 1}
 
 	var sb strings.Builder
-	sb.WriteString("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA LIMIT ?")
+	_, err = sb.WriteString("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA LIMIT ?")
+	if err != nil {
+		return nil, "", err
+	}
 	if offset > 0 {
-		sb.WriteString(" OFFSET ?")
+		_, err = sb.WriteString(" OFFSET ?")
+		if err != nil {
+			return nil, "", err
+		}
 		args = append(args, offset)
 	}
 

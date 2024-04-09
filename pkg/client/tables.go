@@ -35,9 +35,15 @@ func (c *Client) ListTables(ctx context.Context, parentResourceID *v2.ResourceId
 	args := []interface{}{parent.DatabaseName, limit + 1}
 
 	var sb strings.Builder
-	sb.WriteString("SELECT TABLE_NAME, TABLE_SCHEMA, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? LIMIT ?")
+	_, err = sb.WriteString("SELECT TABLE_NAME, TABLE_SCHEMA, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? LIMIT ?")
+	if err != nil {
+		return nil, "", err
+	}
 	if offset > 0 {
-		sb.WriteString(" OFFSET ?")
+		_, err = sb.WriteString(" OFFSET ?")
+		if err != nil {
+			return nil, "", err
+		}
 		args = append(args, offset)
 	}
 

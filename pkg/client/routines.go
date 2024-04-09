@@ -35,9 +35,15 @@ func (c *Client) ListRoutines(ctx context.Context, parentResourceID *v2.Resource
 	args := []interface{}{parent.DatabaseName, limit + 1}
 
 	var sb strings.Builder
-	sb.WriteString("SELECT SPECIFIC_NAME, ROUTINE_SCHEMA, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=? LIMIT ?")
+	_, err = sb.WriteString("SELECT SPECIFIC_NAME, ROUTINE_SCHEMA, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=? LIMIT ?")
+	if err != nil {
+		return nil, "", err
+	}
 	if offset > 0 {
-		sb.WriteString(" OFFSET ?")
+		_, err = sb.WriteString(" OFFSET ?")
+		if err != nil {
+			return nil, "", err
+		}
 		args = append(args, offset)
 	}
 

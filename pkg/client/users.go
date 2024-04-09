@@ -42,8 +42,8 @@ func (u *User) GetPrivs(ctx context.Context) map[string]struct{} {
 	return ret
 }
 
-func (c *Client) userPrivsSelect(ctx context.Context, sb *strings.Builder) {
-	sb.WriteString(`CONCAT(
+func (c *Client) userPrivsSelect(ctx context.Context, sb *strings.Builder) error {
+	_, err := sb.WriteString(`CONCAT(
 CASE WHEN Select_priv = 'Y' THEN 'select,' ELSE '' END,
 CASE WHEN Insert_priv = 'Y' THEN 'insert,' ELSE '' END,
 CASE WHEN Update_priv = 'Y' THEN 'update,' ELSE '' END,
@@ -72,15 +72,25 @@ CASE WHEN Create_user_priv = 'Y' THEN 'create_user,' ELSE '' END,
 CASE WHEN Event_priv = 'Y' THEN 'event,' ELSE '' END,
 CASE WHEN Trigger_priv = 'Y' THEN 'trigger,' ELSE '' END,
 CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END`)
+	if err != nil {
+		return err
+	}
 
 	if c.IsVersion8() {
-		sb.WriteString(`,
+		_, err = sb.WriteString(`,
 CASE WHEN Create_role_priv = 'Y' THEN 'create_role,' ELSE '' END,
 CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END
 `)
+		if err != nil {
+			return err
+		}
 	}
 
-	sb.WriteString(") as privs,")
+	_, err = sb.WriteString(") as privs,")
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // GetUser returns a single user@host row and its perms
@@ -94,12 +104,25 @@ CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END
 func (c *Client) GetUser(ctx context.Context, user string, host string) (*User, error) {
 	u := User{}
 	sb := &strings.Builder{}
-	sb.WriteString(`SELECT User, Host,`)
-	c.userPrivsSelect(ctx, sb)
-	sb.WriteString(`CASE WHEN authentication_string = '' THEN 'role' ELSE 'user' END AS user_type `)
-	sb.WriteString(`FROM mysql.user WHERE User = ? AND Host = ?`)
+	_, err := sb.WriteString(`SELECT User, Host,`)
+	if err != nil {
+		return nil, err
+	}
 
-	err := c.db.GetContext(ctx, &u, sb.String(), user, host)
+	err = c.userPrivsSelect(ctx, sb)
+	if err != nil {
+		return nil, err
+	}
+	_, err = sb.WriteString(`CASE WHEN authentication_string = '' THEN 'role' ELSE 'user' END AS user_type `)
+	if err != nil {
+		return nil, err
+	}
+	_, err = sb.WriteString(`FROM mysql.user WHERE User = ? AND Host = ?`)
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.db.GetContext(ctx, &u, sb.String(), user, host)
 	if err != nil {
 		return nil, err
 	}
@@ -107,16 +130,16 @@ func (c *Client) GetUser(ctx context.Context, user string, host string) (*User, 
 	return &u, nil
 }
 
-func (c *Client) getUserGroupedByHostQuery(ctx context.Context) *strings.Builder {
+func (c *Client) getUserGroupedByHostQuery(ctx context.Context) (*strings.Builder, error) {
 	sb := &strings.Builder{}
-	sb.WriteString(`SELECT User, GROUP_CONCAT(Host) as Host, 'user' AS user_type FROM mysql.user `)
-	return sb
+	_, err := sb.WriteString(`SELECT User, GROUP_CONCAT(Host) as Host, 'user' AS user_type FROM mysql.user `)
+	return sb, err
 }
 
-func (c *Client) getUsersQuery(ctx context.Context) *strings.Builder {
+func (c *Client) getUsersQuery(ctx context.Context) (*strings.Builder, error) {
 	sb := &strings.Builder{}
-	sb.WriteString(`SELECT Host, User, CASE WHEN authentication_string = '' THEN 'role' ELSE 'user' END AS user_type FROM mysql.user `)
-	return sb
+	_, err := sb.WriteString(`SELECT Host, User, CASE WHEN authentication_string = '' THEN 'role' ELSE 'user' END AS user_type FROM mysql.user `)
+	return sb, err
 }
 
 // ListUsers queries the server and fetches all the users for the given  page.
@@ -130,30 +153,51 @@ func (c *Client) ListUsers(ctx context.Context, userType string, pager *Pager, c
 	}
 	var args []interface{}
 
-	sb := c.getUsersQuery(ctx)
+	sb, err := c.getUsersQuery(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	if collapseUsers {
-		sb = c.getUserGroupedByHostQuery(ctx)
+		sb, err = c.getUserGroupedByHostQuery(ctx)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	switch userType {
 	case UserType:
-		sb.WriteString(`WHERE authentication_string != '' `)
+		_, err = sb.WriteString(`WHERE authentication_string != '' `)
+		if err != nil {
+			return nil, "", err
+		}
 
 	case RoleType:
-		sb.WriteString(`WHERE authentication_string = '' `)
+		_, err = sb.WriteString(`WHERE authentication_string = '' `)
+		if err != nil {
+			return nil, "", err
+		}
 
 	default:
 		return nil, "", fmt.Errorf("unexpected user type %s", userType)
 	}
 
 	if collapseUsers {
-		sb.WriteString(`GROUP BY User `)
+		_, err = sb.WriteString(`GROUP BY User `)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
-	sb.WriteString("LIMIT ? ")
+	_, err = sb.WriteString("LIMIT ? ")
+	if err != nil {
+		return nil, "", err
+	}
 	args = append(args, limit+1)
 	if offset > 0 {
-		sb.WriteString("OFFSET ?")
+		_, err = sb.WriteString("OFFSET ?")
+		if err != nil {
+			return nil, "", err
+		}
 		args = append(args, offset)
 	}
 	var ret []*User
