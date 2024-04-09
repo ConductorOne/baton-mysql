@@ -8,7 +8,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
+	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 type userSyncer struct {
@@ -41,12 +41,16 @@ func (s *userSyncer) List(
 	for _, u := range users {
 		var annos annotations.Annotations
 
-		ut, err := sdk.NewUserTrait("", v2.UserTrait_Status_STATUS_ENABLED, map[string]interface{}{
-			"user":       u.User,
-			"host":       u.Host,
-			"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
-			"user_id":    fmt.Sprintf("%s@%s", u.User, u.Host),
-		})
+		ut, err := rs.NewUserTrait(
+			rs.WithUserProfile(map[string]interface{}{
+				"user":       u.User,
+				"host":       u.Host,
+				"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
+				"user_id":    fmt.Sprintf("%s@%s", u.User, u.Host),
+			}),
+			rs.WithUserLogin(u.User),
+			rs.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}
