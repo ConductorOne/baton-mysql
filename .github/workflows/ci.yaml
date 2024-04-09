@@ -36,3 +36,38 @@ jobs:
         uses: guyarb/golang-test-annotations@v0.5.1
         with:
           test-results: test.json
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: mysql:8
+        ports:
+          - "3306:3306"
+        env:
+          MYSQL_DATABASE: testdb
+          MYSQL_ROOT_PASSWORD: secretpassword
+          MYSQL_USER: testuser
+          MYSQL_PASSWORD: secretpassword
+    env:
+      BATON_LOG_LEVEL: debug
+      BATON_CONNECTION_STRING: 'root:secretpassword@tcp(localhost:3306)/testdb'
+      CONNECTOR_GRANT: 'grant:entitlement:select:table:sys.sys_config:user:mysql.sys@localhost'
+      CONNECTOR_ENTITLEMENT: 'entitlement:select:table:sys.sys_config'
+      CONNECTOR_PRINCIPAL: 'user:mysql.sys@localhost'
+      CONNECTOR_PRINCIPAL_TYPE: 'user'
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.x
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Install baton
+        run: ./scripts/get-baton.sh && mv baton /usr/local/bin
+      - name: Build baton-mysql
+        run: go build ./cmd/baton-mysql
+      - name: Run baton-mysql
+        run: ./baton-mysql
+
+      - name: Check grant exists
+        run: ./baton-mysql && baton grants --entitlement "${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
