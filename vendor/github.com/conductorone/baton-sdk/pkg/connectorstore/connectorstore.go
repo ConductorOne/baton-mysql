@@ -22,6 +22,8 @@ type Reader interface {
 	v2.GrantsServiceServer
 	reader_v2.GrantsReaderServiceServer
 
+	reader_v2.SyncsReaderServiceServer
+
 	// GetAsset does not implement the AssetServer on the reader here. In other situations we were able to easily 'fake'
 	// the GRPC api, but because this is defined as a streaming RPC, it isn't trivial to implement grpc streaming as part of the c1z format.
 	GetAsset(ctx context.Context, req *v2.AssetServiceGetAssetRequest) (string, io.Reader, error)
@@ -33,13 +35,18 @@ type Reader interface {
 type Writer interface {
 	Reader
 	StartSync(ctx context.Context) (string, bool, error)
+	StartNewSync(ctx context.Context) (string, error)
+	StartNewSyncV2(ctx context.Context, syncType string, parentSyncID string) (string, error)
+	SetCurrentSync(ctx context.Context, syncID string) error
 	CurrentSyncStep(ctx context.Context) (string, error)
 	CheckpointSync(ctx context.Context, syncToken string) error
 	EndSync(ctx context.Context) error
-	PutResourceType(ctx context.Context, resourceType *v2.ResourceType) error
-	PutResource(ctx context.Context, resource *v2.Resource) error
-	PutEntitlement(ctx context.Context, entitlement *v2.Entitlement) error
-	PutGrant(ctx context.Context, grant *v2.Grant) error
 	PutAsset(ctx context.Context, assetRef *v2.AssetRef, contentType string, data []byte) error
 	Cleanup(ctx context.Context) error
+
+	PutGrants(ctx context.Context, grants ...*v2.Grant) error
+	PutResourceTypes(ctx context.Context, resourceTypes ...*v2.ResourceType) error
+	PutResources(ctx context.Context, resources ...*v2.Resource) error
+	PutEntitlements(ctx context.Context, entitlements ...*v2.Entitlement) error
+	DeleteGrant(ctx context.Context, grantId string) error
 }

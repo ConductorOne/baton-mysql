@@ -1,35 +1,39 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"strings"
-
-	"github.com/conductorone/baton-sdk/pkg/cli"
+	"github.com/conductorone/baton-sdk/pkg/field"
+	"github.com/spf13/viper"
 )
 
-// config defines the external configuration required for the connector to run.
-type config struct {
-	cli.BaseConfig `mapstructure:",squash"` // Puts the base config options in the same place as the connector options
-
-	ConnectionString string   `mapstructure:"connection-string"`
-	SkipDatabases    []string `mapstructure:"skip-database"`
-	ExpandColumns    []string `mapstructure:"expand-columns"`
-	CollapseUsers    bool     `mapstructure:"collapse-users"`
-}
+var (
+	ConnectionString = field.StringField(
+		"connection-string",
+		field.WithDescription("The connection string for connecting to MySQL ($BATON_CONNECTION_STRING)"),
+		field.WithRequired(true),
+	)
+	SkipDatabases = field.StringSliceField(
+		"skip-database",
+		field.WithDescription("Skip syncing privileges from these databases ($BATON_SKIP_DATABASE)"),
+		field.WithRequired(false),
+	)
+	ExpandColumns = field.StringSliceField(
+		"expand-columns",
+		field.WithDescription("Provide a table like db.table to expand the column privileges into their own entitlements. $(BATON_EXPAND_COLUMNS)"),
+		field.WithRequired(false),
+	)
+	CollapseUsers = field.BoolField(
+		"collapse-users",
+		field.WithDescription("Combine user@host pairs into a single user@[hosts...] identity $(BATON_COLLAPSE_USERS)"),
+		field.WithDefaultValue(false),
+		field.WithRequired(false),
+	)
+	// ConfigurationFields defines the external configuration required for the
+	// connector to run. Note: these fields can be marked as optional or
+	// required.
+	ConfigurationFields = []field.SchemaField{ConnectionString, SkipDatabases, ExpandColumns, CollapseUsers}
+)
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
-func validateConfig(ctx context.Context, cfg *config) error {
-	if cfg.ConnectionString == "" {
-		return fmt.Errorf("--connection-string is required")
-	}
-
-	for _, col := range cfg.ExpandColumns {
-		p := strings.Split(col, ".")
-		if len(p) != 2 {
-			return fmt.Errorf("malformed expand-columns option. Must be in the format of db.table")
-		}
-	}
-
+func ValidateConfig(v *viper.Viper) error {
 	return nil
 }

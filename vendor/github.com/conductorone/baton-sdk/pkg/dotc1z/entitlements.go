@@ -5,12 +5,11 @@ import (
 	"fmt"
 
 	"github.com/doug-martin/goqu/v9"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	reader_v2 "github.com/conductorone/baton-sdk/pb/c1/reader/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 )
 
 const entitlementsTableVersion = "1"
@@ -50,11 +49,17 @@ func (r *entitlementsTable) Schema() (string, []interface{}) {
 	}
 }
 
+func (r *entitlementsTable) Migrations(ctx context.Context, db *goqu.Database) error {
+	return nil
+}
+
 func (c *C1File) ListEntitlements(ctx context.Context, request *v2.EntitlementsServiceListEntitlementsRequest) (*v2.EntitlementsServiceListEntitlementsResponse, error) {
-	ctxzap.Extract(ctx).Debug("listing entitlements")
+	ctx, span := tracer.Start(ctx, "C1File.ListEntitlements")
+	defer span.End()
+
 	objs, nextPageToken, err := c.listConnectorObjects(ctx, entitlements.Name(), request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error listing entitlements: %w", err)
 	}
 
 	ret := make([]*v2.Entitlement, 0, len(objs))
@@ -74,13 +79,17 @@ func (c *C1File) ListEntitlements(ctx context.Context, request *v2.EntitlementsS
 }
 
 func (c *C1File) GetEntitlement(ctx context.Context, request *reader_v2.EntitlementsReaderServiceGetEntitlementRequest) (*reader_v2.EntitlementsReaderServiceGetEntitlementResponse, error) {
-	ctxzap.Extract(ctx).Debug("fetching entitlement", zap.String("entitlement_id", request.EntitlementId))
+	ctx, span := tracer.Start(ctx, "C1File.GetEntitlement")
+	defer span.End()
 
 	ret := &v2.Entitlement{}
-
-	err := c.getConnectorObject(ctx, entitlements.Name(), request.EntitlementId, ret)
+	syncId, err := annotations.GetSyncIdFromAnnotations(request.GetAnnotations())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting sync id from annotations for entitlement '%s': %w", request.EntitlementId, err)
+	}
+	err = c.getConnectorObject(ctx, entitlements.Name(), request.EntitlementId, syncId, ret)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching entitlement '%s': %w", request.EntitlementId, err)
 	}
 
 	return &reader_v2.EntitlementsReaderServiceGetEntitlementResponse{
@@ -88,27 +97,35 @@ func (c *C1File) GetEntitlement(ctx context.Context, request *reader_v2.Entitlem
 	}, nil
 }
 
-func (c *C1File) PutEntitlement(ctx context.Context, entitlement *v2.Entitlement) error {
-	ctxzap.Extract(ctx).Debug("syncing entitlement", zap.String("entitlement_id", entitlement.Id))
+func (c *C1File) PutEntitlements(ctx context.Context, entitlementObjs ...*v2.Entitlement) error {
+	ctx, span := tracer.Start(ctx, "C1File.PutEntitlements")
+	defer span.End()
 
-	if entitlement.Resource == nil && entitlement.Resource.Id == nil {
-		return fmt.Errorf("entitlements must have a non-nil resource")
-	}
+	return c.putEntitlementsInternal(ctx, bulkPutConnectorObject, entitlementObjs...)
+}
 
-	query, args, err := c.putConnectorObjectQuery(ctx, entitlements.Name(), entitlement, goqu.Record{
-		"resource_id":      entitlement.Resource.Id.Resource,
-		"resource_type_id": entitlement.Resource.Id.ResourceType,
-	})
+func (c *C1File) PutEntitlementsIfNewer(ctx context.Context, entitlementObjs ...*v2.Entitlement) error {
+	ctx, span := tracer.Start(ctx, "C1File.PutEntitlementsIfNewer")
+	defer span.End()
+
+	return c.putEntitlementsInternal(ctx, bulkPutConnectorObjectIfNewer, entitlementObjs...)
+}
+
+type entitlementPutFunc func(context.Context, *C1File, string, func(m *v2.Entitlement) (goqu.Record, error), ...*v2.Entitlement) error
+
+func (c *C1File) putEntitlementsInternal(ctx context.Context, f entitlementPutFunc, entitlementObjs ...*v2.Entitlement) error {
+	err := f(ctx, c, entitlements.Name(),
+		func(entitlement *v2.Entitlement) (goqu.Record, error) {
+			return goqu.Record{
+				"resource_id":      entitlement.Resource.Id.Resource,
+				"resource_type_id": entitlement.Resource.Id.ResourceType,
+			}, nil
+		},
+		entitlementObjs...,
+	)
 	if err != nil {
 		return err
 	}
-
-	_, err = c.db.ExecContext(ctx, query, args...)
-	if err != nil {
-		return err
-	}
-
 	c.dbUpdated = true
-
 	return nil
 }

@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	c1zpb "github.com/conductorone/baton-sdk/pb/c1/c1z/v1"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/doug-martin/goqu/v9"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	reader_v2 "github.com/conductorone/baton-sdk/pb/c1/reader/v2"
@@ -56,12 +54,17 @@ func (r *resourcesTable) Schema() (string, []interface{}) {
 	}
 }
 
+func (r *resourcesTable) Migrations(ctx context.Context, db *goqu.Database) error {
+	return nil
+}
+
 func (c *C1File) ListResources(ctx context.Context, request *v2.ResourcesServiceListResourcesRequest) (*v2.ResourcesServiceListResourcesResponse, error) {
-	ctxzap.Extract(ctx).Debug("listing resources")
+	ctx, span := tracer.Start(ctx, "C1File.ListResources")
+	defer span.End()
 
 	objs, nextPageToken, err := c.listConnectorObjects(ctx, resources.Name(), request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error listing resources: %w", err)
 	}
 
 	ret := make([]*v2.Resource, 0, len(objs))
@@ -81,24 +84,17 @@ func (c *C1File) ListResources(ctx context.Context, request *v2.ResourcesService
 }
 
 func (c *C1File) GetResource(ctx context.Context, request *reader_v2.ResourcesReaderServiceGetResourceRequest) (*reader_v2.ResourcesReaderServiceGetResourceResponse, error) {
-	ctxzap.Extract(ctx).Debug(
-		"fetching resource",
-		zap.String("resource_id", request.ResourceId.Resource),
-		zap.String("resource_type_id", request.ResourceId.ResourceType),
-	)
+	ctx, span := tracer.Start(ctx, "C1File.GetResource")
+	defer span.End()
 
 	ret := &v2.Resource{}
-	annos := annotations.Annotations(request.GetAnnotations())
-	syncDetails := &c1zpb.SyncDetails{}
-	syncID := ""
-
-	if ok, err := annos.Pick(syncDetails); err == nil && ok {
-		syncID = syncDetails.GetId()
-	}
-
-	err := c.getResourceObject(ctx, request.ResourceId, ret, syncID)
+	syncId, err := annotations.GetSyncIdFromAnnotations(request.GetAnnotations())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting sync id from annotations for resource '%s': %w", request.ResourceId, err)
+	}
+	err = c.getResourceObject(ctx, request.ResourceId, ret, syncId)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching resource '%s': %w", request.ResourceId, err)
 	}
 
 	return &reader_v2.ResourcesReaderServiceGetResourceResponse{
@@ -106,34 +102,45 @@ func (c *C1File) GetResource(ctx context.Context, request *reader_v2.ResourcesRe
 	}, nil
 }
 
-func (c *C1File) PutResource(ctx context.Context, resource *v2.Resource) error {
-	ctxzap.Extract(ctx).Debug(
-		"syncing resource",
-		zap.String("resource_id", resource.Id.Resource),
-		zap.String("resource_type_id", resource.Id.ResourceType),
+func (c *C1File) PutResources(ctx context.Context, resourceObjs ...*v2.Resource) error {
+	ctx, span := tracer.Start(ctx, "C1File.PutResources")
+	defer span.End()
+
+	return c.putResourcesInternal(ctx, bulkPutConnectorObject, resourceObjs...)
+}
+
+func (c *C1File) PutResourcesIfNewer(ctx context.Context, resourceObjs ...*v2.Resource) error {
+	ctx, span := tracer.Start(ctx, "C1File.PutResourcesIfNewer")
+	defer span.End()
+
+	return c.putResourcesInternal(ctx, bulkPutConnectorObjectIfNewer, resourceObjs...)
+}
+
+type resourcePutFunc func(context.Context, *C1File, string, func(m *v2.Resource) (goqu.Record, error), ...*v2.Resource) error
+
+func (c *C1File) putResourcesInternal(ctx context.Context, f resourcePutFunc, resourceObjs ...*v2.Resource) error {
+	err := f(ctx, c, resources.Name(),
+		func(resource *v2.Resource) (goqu.Record, error) {
+			fields := goqu.Record{
+				"resource_type_id": resource.Id.ResourceType,
+				"external_id":      fmt.Sprintf("%s:%s", resource.Id.ResourceType, resource.Id.Resource),
+			}
+
+			// If we bulk insert some resources with parent ids and some without, goqu errors because of the different number of fields.
+			if resource.ParentResourceId == nil {
+				fields["parent_resource_type_id"] = nil
+				fields["parent_resource_id"] = nil
+			} else {
+				fields["parent_resource_type_id"] = resource.ParentResourceId.ResourceType
+				fields["parent_resource_id"] = resource.ParentResourceId.Resource
+			}
+			return fields, nil
+		},
+		resourceObjs...,
 	)
-
-	updateRecord := goqu.Record{
-		"resource_type_id": resource.Id.ResourceType,
-		"external_id":      fmt.Sprintf("%s:%s", resource.Id.ResourceType, resource.Id.Resource),
-	}
-
-	if resource.ParentResourceId != nil {
-		updateRecord["parent_resource_type_id"] = resource.ParentResourceId.ResourceType
-		updateRecord["parent_resource_id"] = resource.ParentResourceId.Resource
-	}
-
-	query, args, err := c.putConnectorObjectQuery(ctx, resources.Name(), resource, updateRecord)
 	if err != nil {
 		return err
 	}
-
-	_, err = c.db.ExecContext(ctx, query, args...)
-	if err != nil {
-		return err
-	}
-
 	c.dbUpdated = true
-
 	return nil
 }

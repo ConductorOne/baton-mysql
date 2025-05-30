@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -26,13 +27,42 @@ type fullSyncHelpers interface {
 }
 
 type fullSyncTaskHandler struct {
-	task    *v1.Task
-	helpers fullSyncHelpers
+	task                                *v1.Task
+	helpers                             fullSyncHelpers
+	skipFullSync                        bool
+	externalResourceC1ZPath             string
+	externalResourceEntitlementIdFilter string
+	targetedSyncResourceIDs             []string
 }
 
 func (c *fullSyncTaskHandler) sync(ctx context.Context, c1zPath string) error {
+	ctx, span := tracer.Start(ctx, "fullSyncTaskHandler.sync")
+	defer span.End()
+
 	l := ctxzap.Extract(ctx).With(zap.String("task_id", c.task.GetId()), zap.Stringer("task_type", tasks.GetType(c.task)))
-	syncer, err := sdkSync.NewSyncer(ctx, c.helpers.ConnectorClient(), sdkSync.WithC1ZPath(c1zPath), sdkSync.WithTmpDir(c.helpers.TempDir()))
+
+	syncOpts := []sdkSync.SyncOpt{
+		sdkSync.WithC1ZPath(c1zPath),
+		sdkSync.WithTmpDir(c.helpers.TempDir()),
+	}
+
+	if c.externalResourceC1ZPath != "" {
+		syncOpts = append(syncOpts, sdkSync.WithExternalResourceC1ZPath(c.externalResourceC1ZPath))
+	}
+
+	if c.externalResourceEntitlementIdFilter != "" {
+		syncOpts = append(syncOpts, sdkSync.WithExternalResourceEntitlementIdFilter(c.externalResourceEntitlementIdFilter))
+	}
+
+	if c.skipFullSync {
+		syncOpts = append(syncOpts, sdkSync.WithSkipFullSync())
+	}
+
+	if len(c.targetedSyncResourceIDs) > 0 {
+		syncOpts = append(syncOpts, sdkSync.WithTargetedSyncResourceIDs(c.targetedSyncResourceIDs))
+	}
+
+	syncer, err := sdkSync.NewSyncer(ctx, c.helpers.ConnectorClient(), syncOpts...)
 	if err != nil {
 		l.Error("failed to create syncer", zap.Error(err))
 		return err
@@ -69,9 +99,11 @@ func (c *fullSyncTaskHandler) sync(ctx context.Context, c1zPath string) error {
 // task with a sync_id and it doesn't match our current state sync_id, we should reject the task. If we have a task
 // with a sync_id that does match our current state, we should resume our current sync, if possible.
 func (c *fullSyncTaskHandler) HandleTask(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "fullSyncTaskHandler.HandleTask")
+	defer span.End()
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
 	l := ctxzap.Extract(ctx).With(zap.String("task_id", c.task.GetId()), zap.Stringer("task_type", tasks.GetType(c.task)))
 	l.Info("Handling full sync task.")
 
@@ -121,12 +153,84 @@ func (c *fullSyncTaskHandler) HandleTask(ctx context.Context) error {
 		return c.helpers.FinishTask(ctx, nil, nil, err)
 	}
 
+	err = uploadDebugLogs(ctx, c.helpers)
+	if err != nil {
+		return c.helpers.FinishTask(ctx, nil, nil, err)
+	}
+
 	return c.helpers.FinishTask(ctx, nil, nil, nil)
 }
 
-func newFullSyncTaskHandler(task *v1.Task, helpers fullSyncHelpers) tasks.TaskHandler {
+func newFullSyncTaskHandler(
+	task *v1.Task,
+	helpers fullSyncHelpers,
+	skipFullSync bool,
+	externalResourceC1ZPath string,
+	externalResourceEntitlementIdFilter string,
+	targetedSyncResourceIDs []string,
+) tasks.TaskHandler {
 	return &fullSyncTaskHandler{
-		task:    task,
-		helpers: helpers,
+		task:                                task,
+		helpers:                             helpers,
+		skipFullSync:                        skipFullSync,
+		externalResourceC1ZPath:             externalResourceC1ZPath,
+		externalResourceEntitlementIdFilter: externalResourceEntitlementIdFilter,
+		targetedSyncResourceIDs:             targetedSyncResourceIDs,
+	}
+}
+
+func uploadDebugLogs(ctx context.Context, helper fullSyncHelpers) error {
+	ctx, span := tracer.Start(ctx, "uploadDebugLogs")
+	defer span.End()
+
+	l := ctxzap.Extract(ctx)
+
+	tempDir := helper.TempDir()
+	if tempDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			l.Warn("unable to get the current working directory", zap.Error(err))
+		}
+		if wd != "" {
+			l.Warn("no temporal folder found on this system according to our sync helper,"+
+				" we may create files in the current working directory by mistake as a result",
+				zap.String("current working directory", wd))
+		} else {
+			l.Warn("no temporal folder found on this system according to our sync helper")
+		}
+	}
+	debugfilelocation := filepath.Join(tempDir, "debug.log")
+
+	_, err := os.Stat(debugfilelocation)
+	if err != nil {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			l.Warn("debug log file does not exists", zap.Error(err))
+		case errors.Is(err, os.ErrPermission):
+			l.Warn("debug log file cannot be stat'd due to lack of permissions", zap.Error(err))
+		default:
+			l.Warn("cannot stat debug log file", zap.Error(err))
+		}
+		return nil
+	} else {
+		debugfile, err := os.Open(debugfilelocation)
+		if err != nil {
+			return err
+		}
+		defer debugfile.Close()
+
+		l.Info("uploading debug logs", zap.String("file", debugfilelocation))
+		err = helper.Upload(ctx, debugfile)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			err := os.Remove(debugfilelocation)
+			if err != nil {
+				l.Error("failed to delete file with debug logs", zap.Error(err), zap.String("file", debugfilelocation))
+			}
+		}()
+
+		return nil
 	}
 }
