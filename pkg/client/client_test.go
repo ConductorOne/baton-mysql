@@ -105,7 +105,7 @@ func newGrantItem(rType string, resources ...dbResourceID) grantItem {
 	}
 }
 
-func genUsersAndRoles(userCount int, roleCount int) (map[string]struct{}, map[string]struct{}) {
+func genUsersAndRoles(r *rand.Rand, userCount int, roleCount int) (map[string]struct{}, map[string]struct{}) {
 	users := make(map[string]struct{})
 	roles := make(map[string]struct{})
 
@@ -113,8 +113,8 @@ func genUsersAndRoles(userCount int, roleCount int) (map[string]struct{}, map[st
 
 	// Run until we have enough users, or we collide 3 times. Success resets the counter.
 	for collisions < 3 && len(users) < userCount {
-		hostName := hostPool[rand.Intn(len(hostPool))]
-		accountName := fmt.Sprintf(`'user_%d'@'%s'`, rand.Intn(userCount/2), hostName)
+		hostName := hostPool[r.Intn(len(hostPool))]
+		accountName := fmt.Sprintf(`'user_%d'@'%s'`, r.Intn(userCount/2), hostName)
 		if _, ok := users[accountName]; !ok {
 			users[accountName] = struct{}{}
 			collisions = 0
@@ -126,7 +126,7 @@ func genUsersAndRoles(userCount int, roleCount int) (map[string]struct{}, map[st
 	collisions = 0
 	// Run until we have enough roles, or we collide 3 times.
 	for collisions < 3 && len(roles) < roleCount {
-		accountName := fmt.Sprintf("'role_%d'", rand.Intn(9999))
+		accountName := fmt.Sprintf("'role_%d'", r.Intn(9999))
 		if _, ok := roles[accountName]; !ok {
 			roles[accountName] = struct{}{}
 			collisions = 0
@@ -140,7 +140,7 @@ func genUsersAndRoles(userCount int, roleCount int) (map[string]struct{}, map[st
 
 func Test_generateRandomGrants(t *testing.T) {
 	t.Skip()
-	rand.Seed(time.Now().UnixNano())
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	ctx := context.Background()
 	databases := make(map[string]dbResourceID)
 	tables := make(map[string]dbResourceID)
@@ -151,7 +151,7 @@ func Test_generateRandomGrants(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate random users and roles to grant privileges to
-	users, roles := genUsersAndRoles(10, 5)
+	users, roles := genUsersAndRoles(r, 10, 5)
 
 	// Scan the database and collect resources to grant privileges to
 	dbName := "dev"
@@ -186,7 +186,7 @@ func Test_generateRandomGrants(t *testing.T) {
 	for i := 0; i < grantCounts; i++ {
 		rCol := randomItem(columns)
 
-		switch rand.Intn(3) {
+		switch r.Intn(3) {
 		case 0:
 			// Pick column's database
 			grantItems = append(grantItems, newGrantItem(DatabaseType, databases[rCol.Database().String()]))
@@ -209,13 +209,13 @@ func Test_generateRandomGrants(t *testing.T) {
 			}
 
 			// pick how many -- at most half of the columns
-			pickedCount := rand.Intn(5)
+			pickedCount := r.Intn(5)
 
 			// Randomly pick pickedCount, making sure we don't duplicate
 			var pickedCols []dbResourceID
 		Outer:
 			for i := 0; i < pickedCount; i++ {
-				idx := rand.Intn(len(tCols))
+				idx := r.Intn(len(tCols))
 				for _, x := range pickedCols {
 					if x == tCols[idx] {
 						continue Outer
@@ -261,7 +261,7 @@ func Test_generateRandomGrants(t *testing.T) {
 	for _, g := range grantItems {
 		// pick a user a role
 		var accountID string
-		switch rand.Intn(2) {
+		switch r.Intn(2) {
 		case 0:
 			accountID = randomKey(users)
 		case 1:
@@ -274,7 +274,7 @@ func Test_generateRandomGrants(t *testing.T) {
 
 		switch g.resourceType {
 		case ColumnType:
-			privs := randomPrivs(columnPrivs(), privCount)
+			privs := randomPrivs(r, columnPrivs(), privCount)
 
 			if len(privs) == 0 {
 				continue
@@ -301,7 +301,7 @@ func Test_generateRandomGrants(t *testing.T) {
 			_ = grantStatements.WriteByte('\n')
 
 		case TableType:
-			privs := randomPrivs(tablePrivs(), privCount)
+			privs := randomPrivs(r, tablePrivs(), privCount)
 
 			if len(privs) == 0 {
 				continue
@@ -321,7 +321,7 @@ func Test_generateRandomGrants(t *testing.T) {
 			_, _ = grantStatements.WriteString(fmt.Sprintf(" ON %s TO %s;\n", resourceString, accountID))
 
 		case DatabaseType:
-			privs := randomPrivs(dbPrivs(), privCount)
+			privs := randomPrivs(r, dbPrivs(), privCount)
 
 			if len(privs) == 0 {
 				continue
@@ -348,7 +348,7 @@ func Test_generateRandomGrants(t *testing.T) {
 	fmt.Printf("Cleanup\n%s\n", cleanupStatements.String())
 }
 
-func randomPrivs(privs []string, n int) []string {
+func randomPrivs(r *rand.Rand, privs []string, n int) []string {
 	var ret []string
 	if len(privs) <= n {
 		return privs
@@ -357,7 +357,7 @@ func randomPrivs(privs []string, n int) []string {
 	collisions := 0
 Outer:
 	for collisions < 3 && len(ret) < n {
-		idx := rand.Intn(len(privs))
+		idx := r.Intn(len(privs))
 
 		for _, r := range ret {
 			if privs[idx] == r {
