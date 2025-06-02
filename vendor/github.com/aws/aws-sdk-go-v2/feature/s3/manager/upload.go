@@ -3,6 +3,7 @@ package manager
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,11 +11,13 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-
 	"github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/internal/awsutil"
+	internalcontext "github.com/aws/aws-sdk-go-v2/internal/context"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithymiddleware "github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // MaxUploadParts is the maximum allowed number of parts in a multi-part upload
@@ -308,6 +311,10 @@ func (u Uploader) Upload(ctx context.Context, input *s3.PutObjectInput, opts ...
 	clientOptions = append(clientOptions, func(o *s3.Options) {
 		o.APIOptions = append(o.APIOptions,
 			middleware.AddSDKAgentKey(middleware.FeatureMetadata, userAgentKey),
+			addFeatureUserAgent, // yes, there are two of these
+			func(s *smithymiddleware.Stack) error {
+				return s.Finalize.Insert(&setS3ExpressDefaultChecksum{}, "ResolveEndpointV2", smithymiddleware.After)
+			},
 		)
 	})
 	clientOptions = append(clientOptions, i.cfg.ClientOptions...)
@@ -577,6 +584,8 @@ func (a completedParts) Less(i, j int) bool {
 // upload will perform a multipart upload using the firstBuf buffer containing
 // the first chunk of data.
 func (u *multiuploader) upload(firstBuf io.ReadSeeker, cleanup func()) (*UploadOutput, error) {
+	u.initChecksumAlgorithm()
+
 	var params s3.CreateMultipartUploadInput
 	awsutil.Copy(&params, u.in)
 
@@ -679,7 +688,7 @@ func (u *multiuploader) shouldContinue(part int32, nextChunkLen int, err error) 
 			msg = fmt.Sprintf("exceeded total allowed S3 limit MaxUploadParts (%d). Adjust PartSize to fit in this limit",
 				MaxUploadParts)
 		}
-		return false, fmt.Errorf(msg)
+		return false, errors.New(msg)
 	}
 
 	return true, err
@@ -745,6 +754,25 @@ func (u *multiuploader) send(c chunk) error {
 	return nil
 }
 
+func (u *multiuploader) initChecksumAlgorithm() {
+	if u.in.ChecksumAlgorithm != "" {
+		return
+	}
+
+	switch {
+	case u.in.ChecksumCRC32 != nil:
+		u.in.ChecksumAlgorithm = types.ChecksumAlgorithmCrc32
+	case u.in.ChecksumCRC32C != nil:
+		u.in.ChecksumAlgorithm = types.ChecksumAlgorithmCrc32c
+	case u.in.ChecksumSHA1 != nil:
+		u.in.ChecksumAlgorithm = types.ChecksumAlgorithmSha1
+	case u.in.ChecksumSHA256 != nil:
+		u.in.ChecksumAlgorithm = types.ChecksumAlgorithmSha256
+	default:
+		u.in.ChecksumAlgorithm = types.ChecksumAlgorithmCrc32
+	}
+}
+
 // geterr is a thread-safe getter for the error object
 func (u *multiuploader) geterr() error {
 	u.m.Lock()
@@ -807,4 +835,71 @@ func (u *multiuploader) complete() *s3.CompleteMultipartUploadOutput {
 type readerAtSeeker interface {
 	io.ReaderAt
 	io.ReadSeeker
+}
+
+// setS3ExpressDefaultChecksum defaults to CRC32 for S3Express buckets,
+// which is required when uploading to those through transfer manager.
+type setS3ExpressDefaultChecksum struct{}
+
+func (*setS3ExpressDefaultChecksum) ID() string {
+	return "setS3ExpressDefaultChecksum"
+}
+
+func (*setS3ExpressDefaultChecksum) HandleFinalize(
+	ctx context.Context, in smithymiddleware.FinalizeInput, next smithymiddleware.FinalizeHandler,
+) (
+	out smithymiddleware.FinalizeOutput, metadata smithymiddleware.Metadata, err error,
+) {
+	const checksumHeader = "x-amz-checksum-algorithm"
+
+	if internalcontext.GetS3Backend(ctx) != internalcontext.S3BackendS3Express {
+		return next.HandleFinalize(ctx, in)
+	}
+
+	// If this is CreateMultipartUpload we need to ensure the checksum
+	// algorithm header is present. Otherwise everything is driven off the
+	// context setting and we can let it flow from there.
+	if middleware.GetOperationName(ctx) == "CreateMultipartUpload" {
+		r, ok := in.Request.(*smithyhttp.Request)
+		if !ok {
+			return out, metadata, fmt.Errorf("unknown transport type %T", in.Request)
+		}
+
+		if internalcontext.GetChecksumInputAlgorithm(ctx) == "" {
+			r.Header.Set(checksumHeader, "CRC32")
+		}
+		return next.HandleFinalize(ctx, in)
+	} else if internalcontext.GetChecksumInputAlgorithm(ctx) == "" {
+		ctx = internalcontext.SetChecksumInputAlgorithm(ctx, string(types.ChecksumAlgorithmCrc32))
+	}
+
+	return next.HandleFinalize(ctx, in)
+}
+
+func addFeatureUserAgent(stack *smithymiddleware.Stack) error {
+	ua, err := getOrAddRequestUserAgent(stack)
+	if err != nil {
+		return err
+	}
+
+	ua.AddUserAgentFeature(middleware.UserAgentFeatureS3Transfer)
+	return nil
+}
+
+func getOrAddRequestUserAgent(stack *smithymiddleware.Stack) (*middleware.RequestUserAgent, error) {
+	id := (*middleware.RequestUserAgent)(nil).ID()
+	mw, ok := stack.Build.Get(id)
+	if !ok {
+		mw = middleware.NewRequestUserAgent()
+		if err := stack.Build.Add(mw, smithymiddleware.After); err != nil {
+			return nil, err
+		}
+	}
+
+	ua, ok := mw.(*middleware.RequestUserAgent)
+	if !ok {
+		return nil, fmt.Errorf("%T for %s middleware did not match expected type", mw, id)
+	}
+
+	return ua, nil
 }

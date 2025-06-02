@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/conductorone/baton-sdk/pkg/sync/expand"
+
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -16,7 +18,7 @@ type State interface {
 	NextPage(ctx context.Context, pageToken string) error
 	ResourceTypeID(ctx context.Context) string
 	ResourceID(ctx context.Context) string
-	EntitlementGraph(ctx context.Context) *EntitlementGraph
+	EntitlementGraph(ctx context.Context) *expand.EntitlementGraph
 	ParentResourceID(ctx context.Context) string
 	ParentResourceTypeID(ctx context.Context) string
 	PageToken(ctx context.Context) string
@@ -25,6 +27,10 @@ type State interface {
 	Unmarshal(input string) error
 	NeedsExpansion() bool
 	SetNeedsExpansion()
+	HasExternalResourcesGrants() bool
+	SetHasExternalResourcesGrants()
+	ShouldFetchRelatedResources() bool
+	SetShouldFetchRelatedResources()
 }
 
 // ActionOp represents a sync operation.
@@ -43,21 +49,25 @@ func (s ActionOp) String() string {
 		return "list-entitlements"
 	case SyncGrantsOp:
 		return "list-grants"
+	case SyncExternalResourcesOp:
+		return "list-external-resources"
 	case SyncAssetsOp:
 		return "fetch-assets"
 	case SyncGrantExpansionOp:
 		return "grant-expansion"
+	case SyncTargetedResourceOp:
+		return "targeted-resource-sync"
 	default:
 		return "unknown"
 	}
 }
 
-// MarshalJSON marshals the ActionOp insto a json string.
+// MarshalJSON marshals the ActionOp into a json string.
 func (s *ActionOp) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())
 }
 
-// UnmarshalJSON unmarshal's the input byte slice and updates this action op.
+// UnmarshalJSON unmarshals the input byte slice and updates this action op.
 func (s *ActionOp) UnmarshalJSON(data []byte) error {
 	var v string
 	err := json.Unmarshal(data, &v)
@@ -86,6 +96,10 @@ func newActionOp(str string) ActionOp {
 		return SyncAssetsOp
 	case SyncGrantExpansionOp.String():
 		return SyncGrantExpansionOp
+	case SyncExternalResourcesOp.String():
+		return SyncExternalResourcesOp
+	case SyncTargetedResourceOp.String():
+		return SyncTargetedResourceOp
 	default:
 		return UnknownOp
 	}
@@ -99,8 +113,10 @@ const (
 	SyncEntitlementsOp
 	ListResourcesForEntitlementsOp
 	SyncGrantsOp
+	SyncExternalResourcesOp
 	SyncAssetsOp
 	SyncGrantExpansionOp
+	SyncTargetedResourceOp
 )
 
 // Action stores the current operation, page token, and optional fields for which resource is being worked with.
@@ -115,24 +131,28 @@ type Action struct {
 
 // state is an object used for tracking the current status of a connector sync. It operates like a stack.
 type state struct {
-	mtx              sync.RWMutex
-	actions          []Action
-	currentAction    *Action
-	entitlementGraph *EntitlementGraph
-	needsExpansion   bool
+	mtx                         sync.RWMutex
+	actions                     []Action
+	currentAction               *Action
+	entitlementGraph            *expand.EntitlementGraph
+	needsExpansion              bool
+	hasExternalResourceGrants   bool
+	shouldFetchRelatedResources bool
 }
 
 // serializedToken is used to serialize the token to JSON. This separate object is used to avoid having exported fields
 // on the object used externally. We should interface this, probably.
 type serializedToken struct {
-	Actions          []Action          `json:"actions"`
-	CurrentAction    *Action           `json:"current_action"`
-	NeedsExpansion   bool              `json:"needs_expansion"`
-	EntitlementGraph *EntitlementGraph `json:"entitlement_graph"`
+	Actions                     []Action                 `json:"actions"`
+	CurrentAction               *Action                  `json:"current_action"`
+	NeedsExpansion              bool                     `json:"needs_expansion"`
+	EntitlementGraph            *expand.EntitlementGraph `json:"entitlement_graph"`
+	HasExternalResourceGrants   bool                     `json:"has_external_resource_grants"`
+	ShouldFetchRelatedResources bool                     `json:"should_fetch_related_resources"`
 }
 
 // push adds a new action to the stack. If there is no current state, the action is directly set to current, else
-// the current state is appened to the slice of actions, and the new action is set to current.
+// the current state is appended to the slice of actions, and the new action is set to current.
 func (st *state) push(action Action) {
 	st.mtx.Lock()
 	defer st.mtx.Unlock()
@@ -197,6 +217,7 @@ func (st *state) Unmarshal(input string) error {
 		st.actions = token.Actions
 		st.currentAction = token.CurrentAction
 		st.needsExpansion = token.NeedsExpansion
+		st.hasExternalResourceGrants = token.HasExternalResourceGrants
 	} else {
 		st.actions = nil
 		st.entitlementGraph = nil
@@ -212,10 +233,11 @@ func (st *state) Marshal() (string, error) {
 	defer st.mtx.RUnlock()
 
 	data, err := json.Marshal(serializedToken{
-		Actions:          st.actions,
-		CurrentAction:    st.currentAction,
-		NeedsExpansion:   st.needsExpansion,
-		EntitlementGraph: st.entitlementGraph,
+		Actions:                   st.actions,
+		CurrentAction:             st.currentAction,
+		NeedsExpansion:            st.needsExpansion,
+		EntitlementGraph:          st.entitlementGraph,
+		HasExternalResourceGrants: st.hasExternalResourceGrants,
 	})
 	if err != nil {
 		return "", err
@@ -260,6 +282,22 @@ func (st *state) SetNeedsExpansion() {
 	st.needsExpansion = true
 }
 
+func (st *state) HasExternalResourcesGrants() bool {
+	return st.hasExternalResourceGrants
+}
+
+func (st *state) SetHasExternalResourcesGrants() {
+	st.hasExternalResourceGrants = true
+}
+
+func (st *state) ShouldFetchRelatedResources() bool {
+	return st.shouldFetchRelatedResources
+}
+
+func (st *state) SetShouldFetchRelatedResources() {
+	st.shouldFetchRelatedResources = true
+}
+
 // PageToken returns the page token for the current action.
 func (st *state) PageToken(ctx context.Context) string {
 	c := st.Current()
@@ -291,13 +329,13 @@ func (st *state) ResourceID(ctx context.Context) string {
 }
 
 // EntitlementGraph returns the entitlement graph for the current action.
-func (st *state) EntitlementGraph(ctx context.Context) *EntitlementGraph {
+func (st *state) EntitlementGraph(ctx context.Context) *expand.EntitlementGraph {
 	c := st.Current()
 	if c == nil {
 		panic("no current state")
 	}
 	if st.entitlementGraph == nil {
-		st.entitlementGraph = NewEntitlementGraph(ctx)
+		st.entitlementGraph = expand.NewEntitlementGraph(ctx)
 	}
 	return st.entitlementGraph
 }

@@ -3,6 +3,7 @@ package annotations
 import (
 	"fmt"
 
+	c1zpb "github.com/conductorone/baton-sdk/pb/c1/c1z/v1"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -10,7 +11,7 @@ import (
 
 type Annotations []*anypb.Any
 
-// Convenience function to create annotations.
+// New - Convenience function to create annotations.
 func New(msgs ...proto.Message) Annotations {
 	annos := Annotations{}
 	for _, msg := range msgs {
@@ -65,6 +66,10 @@ func (a *Annotations) Update(msg proto.Message) {
 	*a = newAnnotations
 }
 
+func (a *Annotations) Merge(newAnnotations ...*anypb.Any) {
+	*a = append(*a, newAnnotations...)
+}
+
 // Contains checks if the message is in the annotations slice.
 func (a *Annotations) Contains(msg proto.Message) bool {
 	if msg == nil {
@@ -74,6 +79,22 @@ func (a *Annotations) Contains(msg proto.Message) bool {
 	for _, v := range *a {
 		if v.MessageIs(msg) {
 			return true
+		}
+	}
+
+	return false
+}
+
+func (a *Annotations) ContainsAny(msgs ...proto.Message) bool {
+	if len(msgs) == 0 {
+		return false
+	}
+
+	for _, v := range *a {
+		for _, msg := range msgs {
+			if v.MessageIs(msg) {
+				return true
+			}
 		}
 	}
 
@@ -101,4 +122,17 @@ func (a *Annotations) Pick(needle proto.Message) (bool, error) {
 func (a *Annotations) WithRateLimiting(rateLimit *v2.RateLimitDescription) *Annotations {
 	a.Update(rateLimit)
 	return a
+}
+
+func GetSyncIdFromAnnotations(annos Annotations) (string, error) {
+	syncDetails := &c1zpb.SyncDetails{}
+	ok, err := annos.Pick(syncDetails)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return syncDetails.GetId(), nil
+	}
+
+	return "", nil
 }

@@ -63,15 +63,15 @@ func (t dbResourceID) SQLString() (string, error) {
 
 func (t dbResourceID) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s:%s", t.ResourceTypeID, t.DatabaseName)) //nolint:revive // too much work to fix
+	sb.WriteString(fmt.Sprintf("%s:%s", t.ResourceTypeID, t.DatabaseName))
 
 	if t.ResourceName != "" {
-		sb.WriteString(".")            //nolint:revive // too much work to fix
-		sb.WriteString(t.ResourceName) //nolint:revive // too much work to fix
+		sb.WriteString(".")
+		sb.WriteString(t.ResourceName)
 
 		if t.SubResourceName != "" {
-			sb.WriteString(".")               //nolint:revive // too much work to fix
-			sb.WriteString(t.SubResourceName) //nolint:revive // too much work to fix
+			sb.WriteString(".")
+			sb.WriteString(t.SubResourceName)
 		}
 	}
 
