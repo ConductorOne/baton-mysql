@@ -1,6 +1,6 @@
 module github.com/conductorone/baton-mysql
 
-go 1.23.4
+go 1.23
 
 toolchain go1.23.9
 
