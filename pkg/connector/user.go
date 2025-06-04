@@ -132,7 +132,6 @@ func (o *userSyncer) CreateAccount(
 	host, err := o.client.GetHost(ctx)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get host: %w", err)
-
 	}
 
 	generatedPassword, err := generateCredentials(credentialOptions)
@@ -202,7 +201,6 @@ func (s *userSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (ann
 		return nil, fmt.Errorf("baton-mysql: non-user resource passed to user delete")
 	}
 	userID := strings.Split(resourceId.Resource, ":")[1]
-	fmt.Println("baton-mysql: userID", userID)
 	parts := strings.Split(userID, "@")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("baton-mysql: invalid user ID format, expected 'user@host'")
