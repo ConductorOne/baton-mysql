@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -28,4 +29,11 @@ func (c *Client) GetServerInfo(ctx context.Context) (*ServerModel, error) {
 	s.ID = fmt.Sprintf("%s:%s", ServerType, s.Name)
 
 	return &s, nil
+}
+
+func (c *Client) ExecContext(ctx context.Context, query string) (sql.Result, error) {
+	if c.db == nil {
+		return nil, fmt.Errorf("database connection is not initialized")
+	}
+	return c.db.ExecContext(ctx, query)
 }

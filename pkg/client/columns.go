@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -80,4 +81,57 @@ func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceI
 	}
 
 	return ret, nextPageToken, nil
+}
+
+// If the privilege is "grant", it grants SELECT, INSERT, UPDATE, and REFERENCES privileges.
+func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format: %s", user)
+	}
+	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+
+	var privileges []string
+	if strings.ToLower(privilege) == "grant" {
+		privileges = []string{"SELECT", "INSERT", "UPDATE", "REFERENCES"}
+	} else {
+		privileges = []string{strings.ToUpper(privilege)}
+	}
+
+	var privilegeClauses []string
+	for _, priv := range privileges {
+		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, column))
+	}
+	privilegesSQL := strings.Join(privilegeClauses, ", ")
+
+	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", privilegesSQL, table, userGrant)
+
+	_, err := c.db.ExecContext(ctx, query)
+	return err
+}
+
+func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format: %s", user)
+	}
+	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+
+	var privileges []string
+	if strings.ToLower(privilege) == "grant" {
+		privileges = []string{"SELECT", "INSERT", "UPDATE", "REFERENCES"}
+	} else {
+		privileges = []string{strings.ToUpper(privilege)}
+	}
+
+	var privilegeClauses []string
+	for _, priv := range privileges {
+		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, column))
+	}
+	privilegesSQL := strings.Join(privilegeClauses, ", ")
+
+	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", privilegesSQL, table, userRevoke)
+
+	_, err := c.db.ExecContext(ctx, query)
+	return err
 }

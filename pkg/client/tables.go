@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -79,4 +80,20 @@ func (c *Client) ListTables(ctx context.Context, parentResourceID *v2.ResourceId
 	}
 
 	return ret, nextPageToken, nil
+}
+
+func (c *Client) GrantTablePrivilege(ctx context.Context, table string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", strings.ToUpper(privilege), table, userGrant)
+	_, err := c.db.ExecContext(ctx, query)
+	return err
+}
+
+func (c *Client) RevokeTablePrivilege(ctx context.Context, table string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", strings.ToUpper(privilege), table, userRevoke)
+	_, err := c.db.ExecContext(ctx, query)
+	return err
 }

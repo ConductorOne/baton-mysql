@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -24,7 +23,7 @@ type entitlementTemplate struct {
 	v8Only           bool
 }
 
-func getEntitlementsForResource(ctx context.Context, resource *v2.Resource, c *client.Client) ([]*v2.Entitlement, error) {
+func getEntitlementsForResource(resource *v2.Resource, c *client.Client) ([]*v2.Entitlement, error) {
 	tmpls, ok := entitlementsByResourceType[resource.Id.ResourceType]
 	if !ok || len(tmpls) == 0 {
 		return nil, nil
@@ -40,8 +39,8 @@ func getEntitlementsForResource(ctx context.Context, resource *v2.Resource, c *c
 		if !c.IsVersion8() && t.v8Only {
 			continue
 		}
-		dName := getEntitlementDisplayName(ctx, t, resource)
-		dDescription := getEntitlementDescription(ctx, t, resource)
+		dName := getEntitlementDisplayName(t, resource)
+		dDescription := getEntitlementDescription(t, resource)
 		ret = append(ret, &v2.Entitlement{
 			Resource:    resource,
 			Id:          fmt.Sprintf("entitlement:%s:%s", t.ID, resource.Id.Resource),
@@ -50,14 +49,14 @@ func getEntitlementsForResource(ctx context.Context, resource *v2.Resource, c *c
 			GrantableTo: grantable,
 			Annotations: t.entitlement.Annotations,
 			Purpose:     t.entitlement.Purpose,
-			Slug:        strings.ToLower(getEntitlementSlug(ctx, t, resource)),
+			Slug:        strings.ToLower(getEntitlementSlug(t, resource)),
 		})
 	}
 
 	return ret, nil
 }
 
-func getEntitlementSlug(ctx context.Context, e *entitlementTemplate, resource *v2.Resource) string {
+func getEntitlementSlug(e *entitlementTemplate, resource *v2.Resource) string {
 	switch resource.Id.ResourceType {
 	case resourceTypeRole.Id, resourceTypeUser.Id:
 		switch e.ID {
@@ -78,7 +77,7 @@ func getEntitlementSlug(ctx context.Context, e *entitlementTemplate, resource *v
 	}
 }
 
-func getEntitlementDisplayName(ctx context.Context, e *entitlementTemplate, resource *v2.Resource) string {
+func getEntitlementDisplayName(e *entitlementTemplate, resource *v2.Resource) string {
 	rID := strings.TrimPrefix(resource.Id.Resource, fmt.Sprintf("%s:", resource.Id.ResourceType))
 	upperDisplayName := strings.ToUpper(e.entitlement.DisplayName)
 	switch resource.Id.ResourceType {
@@ -112,7 +111,7 @@ func getEntitlementDisplayName(ctx context.Context, e *entitlementTemplate, reso
 	return e.entitlement.DisplayName
 }
 
-func getEntitlementDescription(ctx context.Context, e *entitlementTemplate, resource *v2.Resource) string {
+func getEntitlementDescription(e *entitlementTemplate, resource *v2.Resource) string {
 	rID := strings.TrimPrefix(resource.Id.Resource, fmt.Sprintf("%s:", resource.Id.ResourceType))
 	switch resource.Id.ResourceType {
 	case resourceTypeServer.Id:

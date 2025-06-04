@@ -42,7 +42,7 @@ func (u *User) GetPrivs(ctx context.Context) map[string]struct{} {
 	return ret
 }
 
-func (c *Client) userPrivsSelect(ctx context.Context, sb *strings.Builder) error {
+func (c *Client) userPrivsSelect(sb *strings.Builder) error {
 	_, err := sb.WriteString(`CONCAT(
 CASE WHEN Select_priv = 'Y' THEN 'select,' ELSE '' END,
 CASE WHEN Insert_priv = 'Y' THEN 'insert,' ELSE '' END,
@@ -109,7 +109,7 @@ func (c *Client) GetUser(ctx context.Context, user string, host string) (*User, 
 		return nil, err
 	}
 
-	err = c.userPrivsSelect(ctx, sb)
+	err = c.userPrivsSelect(sb)
 	if err != nil {
 		return nil, err
 	}
@@ -130,13 +130,13 @@ func (c *Client) GetUser(ctx context.Context, user string, host string) (*User, 
 	return &u, nil
 }
 
-func (c *Client) getUserGroupedByHostQuery(ctx context.Context) (*strings.Builder, error) {
+func (c *Client) getUserGroupedByHostQuery() (*strings.Builder, error) {
 	sb := &strings.Builder{}
 	_, err := sb.WriteString(`SELECT User, GROUP_CONCAT(Host) as Host, 'user' AS user_type FROM mysql.user `)
 	return sb, err
 }
 
-func (c *Client) getUsersQuery(ctx context.Context) (*strings.Builder, error) {
+func (c *Client) getUsersQuery() (*strings.Builder, error) {
 	sb := &strings.Builder{}
 	_, err := sb.WriteString(`SELECT Host, User, CASE WHEN authentication_string = '' THEN 'role' ELSE 'user' END AS user_type FROM mysql.user `)
 	return sb, err
@@ -153,12 +153,12 @@ func (c *Client) ListUsers(ctx context.Context, userType string, pager *Pager, c
 	}
 	var args []interface{}
 
-	sb, err := c.getUsersQuery(ctx)
+	sb, err := c.getUsersQuery()
 	if err != nil {
 		return nil, "", err
 	}
 	if collapseUsers {
-		sb, err = c.getUserGroupedByHostQuery(ctx)
+		sb, err = c.getUserGroupedByHostQuery()
 		if err != nil {
 			return nil, "", err
 		}
@@ -214,4 +214,13 @@ func (c *Client) ListUsers(ctx context.Context, userType string, pager *Pager, c
 	}
 
 	return ret, nextPageToken, nil
+}
+
+func (c *Client) GetHost(ctx context.Context) (string, error) {
+	var host string
+	err := c.db.QueryRowxContext(ctx, "SELECT @@hostname").Scan(&host)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch server info: %w", err)
+	}
+	return host, nil
 }
