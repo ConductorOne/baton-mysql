@@ -84,16 +84,50 @@ func (c *Client) ListTables(ctx context.Context, parentResourceID *v2.ResourceId
 
 func (c *Client) GrantTablePrivilege(ctx context.Context, table string, user string, privilege string) error {
 	userSplit := strings.Split(user, "@")
-	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
-	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", strings.ToUpper(privilege), table, userGrant)
-	_, err := c.db.ExecContext(ctx, query)
-	return err
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userGrant := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	escapedTable, err := escapeMySQLIdent(table)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("GRANT %s ON %s TO %s", strings.ToUpper(privilege), escapedTable, userGrant)
+	_ = c.db.MustExec(query)
+	return nil
 }
 
 func (c *Client) RevokeTablePrivilege(ctx context.Context, table string, user string, privilege string) error {
 	userSplit := strings.Split(user, "@")
-	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
-	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", strings.ToUpper(privilege), table, userRevoke)
-	_, err := c.db.ExecContext(ctx, query)
-	return err
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userRevoke := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	escapedTable, err := escapeMySQLIdent(table)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("REVOKE %s ON %s FROM %s", strings.ToUpper(privilege), escapedTable, userRevoke)
+	_ = c.db.MustExec(query)
+	return nil
 }

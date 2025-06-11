@@ -89,20 +89,11 @@ func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, sc
 		return err
 	}
 
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
+	schemaEsc, err := escapeMySQLIdent(schema)
+	if err != nil {
+		return err
 	}
-	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
-
-	query := fmt.Sprintf("GRANT %s ON %s %s.%s TO '%s'",
-		privilege, strings.ToUpper(routineType), schema, routineName, userGrant)
-
-	_, err = c.db.ExecContext(ctx, query)
-	return err
-}
-func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, schema string, routineName string, user string) error {
-	routineType, err := c.GetRoutineType(ctx, schema, routineName)
+	routineNameEsc, err := escapeMySQLIdent(routineName)
 	if err != nil {
 		return err
 	}
@@ -111,12 +102,56 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 	if len(userSplit) != 2 {
 		return fmt.Errorf("invalid user format, expected user@host")
 	}
-	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userGrant := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
 
-	query := fmt.Sprintf("REVOKE %s ON %s %s.%s FROM '%s'",
-		privilege, strings.ToUpper(routineType), schema, routineName, userRevoke)
-	_, err = c.db.ExecContext(ctx, query)
-	return err
+	query := fmt.Sprintf("GRANT %s ON %s %s.%s TO %s",
+		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userGrant)
+
+	_ = c.db.MustExec(query)
+	return nil
+}
+
+func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, schema string, routineName string, user string) error {
+	routineType, err := c.GetRoutineType(ctx, schema, routineName)
+	if err != nil {
+		return err
+	}
+
+	schemaEsc, err := escapeMySQLIdent(schema)
+	if err != nil {
+		return err
+	}
+	routineNameEsc, err := escapeMySQLIdent(routineName)
+	if err != nil {
+		return err
+	}
+
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userRevoke := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	query := fmt.Sprintf("REVOKE %s ON %s %s.%s FROM %s",
+		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
+	_ = c.db.MustExec(query)
+	return nil
 }
 
 func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string) (string, error) {

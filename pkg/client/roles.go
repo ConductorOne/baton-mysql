@@ -17,11 +17,22 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 		return fmt.Errorf("invalid user format: %s", user)
 	}
 
-	roleUser := roleParts[0]
-	roleHost := roleParts[1]
-
-	targetUser := userParts[0]
-	targetHost := userParts[1]
+	roleUser, err := escapeMySQLUserHost(roleParts[0])
+	if err != nil {
+		return err
+	}
+	roleHost, err := escapeMySQLUserHost(roleParts[1])
+	if err != nil {
+		return err
+	}
+	targetUser, err := escapeMySQLUserHost(userParts[0])
+	if err != nil {
+		return err
+	}
+	targetHost, err := escapeMySQLUserHost(userParts[1])
+	if err != nil {
+		return err
+	}
 
 	var grantStmt string
 	switch privilege {
@@ -37,9 +48,10 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 		return fmt.Errorf("unknown privilege: %s", privilege)
 	}
 
-	_, err := c.db.ExecContext(ctx, grantStmt)
-	return err
+	_ = c.db.MustExec(grantStmt)
+	return nil
 }
+
 func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege string) error {
 	roleParts := strings.Split(role, "@")
 	if len(roleParts) != 2 {
@@ -51,11 +63,22 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		return fmt.Errorf("invalid user format: %s", user)
 	}
 
-	roleUser := roleParts[0]
-	roleHost := roleParts[1]
-
-	targetUser := userParts[0]
-	targetHost := userParts[1]
+	roleUser, err := escapeMySQLUserHost(roleParts[0])
+	if err != nil {
+		return err
+	}
+	roleHost, err := escapeMySQLUserHost(roleParts[1])
+	if err != nil {
+		return err
+	}
+	targetUser, err := escapeMySQLUserHost(userParts[0])
+	if err != nil {
+		return err
+	}
+	targetHost, err := escapeMySQLUserHost(userParts[1])
+	if err != nil {
+		return err
+	}
 
 	var revokeStmt string
 	switch privilege {
@@ -67,6 +90,6 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		return fmt.Errorf("unknown privilege: %s", privilege)
 	}
 
-	_, err := c.db.ExecContext(ctx, revokeStmt)
-	return err
+	_ = c.db.MustExec(revokeStmt)
+	return nil
 }

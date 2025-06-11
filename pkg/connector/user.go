@@ -139,10 +139,10 @@ func (o *userSyncer) CreateAccount(
 		return nil, nil, nil, err
 	}
 
-	// Run CREATE USER statement
-	createStmt := fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s';", username, host, generatedPassword)
-	if _, err := o.client.ExecContext(ctx, createStmt); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create MySQL user: %w", err)
+	userStr := fmt.Sprintf("%s@%s", username, host)
+	err = o.client.CreateUser(ctx, userStr, generatedPassword)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("create user failed: %w", err)
 	}
 
 	// Build resource
@@ -200,16 +200,18 @@ func (s *userSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (ann
 	if resourceId.ResourceType != resourceTypeUser.Id {
 		return nil, fmt.Errorf("baton-mysql: non-user resource passed to user delete")
 	}
-	userID := strings.Split(resourceId.Resource, ":")[1]
+	fmt.Println("resourceId", resourceId)
+	userID := strings.TrimSpace(strings.Split(resourceId.Resource, ":")[1])
 	parts := strings.Split(userID, "@")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("baton-mysql: invalid user ID format, expected 'user@host'")
 	}
-	user, host := parts[0], parts[1]
+	user, host := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 
-	deleteStmt := fmt.Sprintf("DROP USER '%s'@'%s';", user, host)
-	if _, err := s.client.ExecContext(ctx, deleteStmt); err != nil {
-		return nil, fmt.Errorf("baton-mysql: failed to delete user: %w", err)
+	userStr := fmt.Sprintf("%s@%s", user, host)
+	err := s.client.DropUser(ctx, userStr)
+	if err != nil {
+		return nil, fmt.Errorf("drop user failed: %w", err)
 	}
 
 	return nil, nil

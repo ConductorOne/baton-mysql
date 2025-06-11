@@ -83,11 +83,9 @@ func (s *databaseSyncer) Grant(ctx context.Context, principal *v2.Resource, enti
 	privilege, database := extractDatabasePrivilegeAndDb(entitlement.Id)
 
 	user := strings.Split(userResource, ":")
-	userSplit := strings.Split(user[1], "@")
-	userGrant := fmt.Sprintf("'%s'@'%s'", userSplit[0], userSplit[1])
+	userStr := user[1]
 
-	query := fmt.Sprintf("GRANT %s ON %s.* TO %s", privilege, database, userGrant)
-	_, err := s.client.ExecContext(ctx, query)
+	err := s.client.GrantDatabasePrivilege(ctx, database, userStr, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}
@@ -100,11 +98,9 @@ func (s *databaseSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotatio
 	privilege, database := extractDatabasePrivilegeAndDb(grant.Entitlement.Id)
 
 	user := strings.Split(userResource, ":")
-	userSplit := strings.Split(user[1], "@")
-	userRevoke := fmt.Sprintf("'%s'@'%s'", userSplit[0], userSplit[1])
+	userStr := user[1]
 
-	query := fmt.Sprintf("REVOKE %s ON %s.* FROM %s", privilege, database, userRevoke)
-	_, err := s.client.ExecContext(ctx, query)
+	err := s.client.RevokeDatabasePrivilege(ctx, database, userStr, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("revoke failed: %w", err)
 	}

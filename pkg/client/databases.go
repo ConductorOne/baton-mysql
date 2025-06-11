@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -70,4 +71,54 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 	}
 
 	return ret, nextPageToken, nil
+}
+
+func (c *Client) GrantDatabasePrivilege(ctx context.Context, database string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userGrant := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	escapedDB, err := escapeMySQLIdent(database)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("GRANT %s ON %s.* TO %s", strings.ToUpper(privilege), escapedDB, userGrant)
+	_ = c.db.MustExec(query)
+	return nil
+}
+
+func (c *Client) RevokeDatabasePrivilege(ctx context.Context, database string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userRevoke := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	escapedDB, err := escapeMySQLIdent(database)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("REVOKE %s ON %s.* FROM %s", strings.ToUpper(privilege), escapedDB, userRevoke)
+	_ = c.db.MustExec(query)
+	return nil
 }

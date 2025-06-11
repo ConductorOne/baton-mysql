@@ -71,7 +71,9 @@ CASE WHEN Alter_routine_priv = 'Y' THEN 'alter_routine,' ELSE '' END,
 CASE WHEN Create_user_priv = 'Y' THEN 'create_user,' ELSE '' END,
 CASE WHEN Event_priv = 'Y' THEN 'event,' ELSE '' END,
 CASE WHEN Trigger_priv = 'Y' THEN 'trigger,' ELSE '' END,
-CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END`)
+CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END,
+CASE WHEN Create_role_priv = 'Y' THEN 'create_role,' ELSE '' END,
+CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END`)
 	if err != nil {
 		return err
 	}
@@ -223,4 +225,43 @@ func (c *Client) GetHost(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to fetch server info: %w", err)
 	}
 	return host, nil
+}
+
+func (c *Client) CreateUser(ctx context.Context, user string, password string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	pwEsc := strings.ReplaceAll(password, "'", "''")
+	userStr := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+	query := fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s'", userStr, pwEsc)
+	_ = c.db.MustExec(query)
+	return nil
+}
+
+func (c *Client) DropUser(ctx context.Context, user string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userStr := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+	query := fmt.Sprintf("DROP USER %s", userStr)
+	_ = c.db.MustExec(query)
+	return nil
 }

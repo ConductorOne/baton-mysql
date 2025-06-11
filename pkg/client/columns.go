@@ -98,16 +98,25 @@ func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column 
 		privileges = []string{strings.ToUpper(privilege)}
 	}
 
+	escapedTable, err := escapeMySQLIdent(table)
+	if err != nil {
+		return err
+	}
+	escapedColumn, err := escapeMySQLIdent(column)
+	if err != nil {
+		return err
+	}
+
 	var privilegeClauses []string
 	for _, priv := range privileges {
-		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, column))
+		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, escapedColumn))
 	}
 	privilegesSQL := strings.Join(privilegeClauses, ", ")
 
-	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", privilegesSQL, table, userGrant)
+	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", privilegesSQL, escapedTable, userGrant)
 
-	_, err := c.db.ExecContext(ctx, query)
-	return err
+	_ = c.db.MustExec(query)
+	return nil
 }
 
 func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
@@ -124,14 +133,23 @@ func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column
 		privileges = []string{strings.ToUpper(privilege)}
 	}
 
+	escapedTable, err := escapeMySQLIdent(table)
+	if err != nil {
+		return err
+	}
+	escapedColumn, err := escapeMySQLIdent(column)
+	if err != nil {
+		return err
+	}
+
 	var privilegeClauses []string
 	for _, priv := range privileges {
-		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, column))
+		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, escapedColumn))
 	}
 	privilegesSQL := strings.Join(privilegeClauses, ", ")
 
-	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", privilegesSQL, table, userRevoke)
+	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", privilegesSQL, escapedTable, userRevoke)
 
-	_, err := c.db.ExecContext(ctx, query)
-	return err
+	_ = c.db.MustExec(query)
+	return nil
 }
