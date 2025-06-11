@@ -200,7 +200,6 @@ func (s *userSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (ann
 	if resourceId.ResourceType != resourceTypeUser.Id {
 		return nil, fmt.Errorf("baton-mysql: non-user resource passed to user delete")
 	}
-	fmt.Println("resourceId", resourceId)
 	userID := strings.TrimSpace(strings.Split(resourceId.Resource, ":")[1])
 	parts := strings.Split(userID, "@")
 	if len(parts) != 2 {

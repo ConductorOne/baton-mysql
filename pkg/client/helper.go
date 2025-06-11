@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Helper for identifiers (tables, columns, databases)
+// Helper for identifiers (tables, columns, databases).
 var validIdent = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
 func escapeMySQLIdent(ident string) (string, error) {
@@ -20,7 +20,7 @@ func escapeMySQLIdent(ident string) (string, error) {
 	return strings.Join(parts, "."), nil
 }
 
-// Helper for user/host
+// Helper for user/host.
 var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%\\.\\-]+$`)
 
 func escapeMySQLUserHost(ident string) (string, error) {
