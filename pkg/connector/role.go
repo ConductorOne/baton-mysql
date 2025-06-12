@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -54,7 +55,7 @@ func (s *roleSyncer) List(
 }
 
 func (s *roleSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	entitlements, err := getEntitlementsForResource(ctx, resource, s.client)
+	entitlements, err := getEntitlementsForResource(resource, s.client)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -71,11 +72,59 @@ func (s *roleSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *
 	return grants, "", nil, nil
 }
 
-func newRoleSyncer(ctx context.Context, c *client.Client, skipDbs map[string]struct{}, expandCols map[string]struct{}) *roleSyncer {
+func newRoleSyncer(c *client.Client, skipDbs map[string]struct{}, expandCols map[string]struct{}) *roleSyncer {
 	return &roleSyncer{
 		resourceType: resourceTypeRole,
 		client:       c,
 		skipDbs:      skipDbs,
 		expandCols:   expandCols,
 	}
+}
+
+func (s *roleSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	if principal.Id.ResourceType != resourceTypeUser.Id {
+		return nil, fmt.Errorf("can only grant role entitlements to users")
+	}
+
+	parts := strings.Split(entitlement.Id, ":")
+	if len(parts) != 4 {
+		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
+	}
+	privilege := parts[1]
+	roleName := parts[3]
+
+	userSplit := strings.Split(principal.Id.Resource, ":")
+	if len(userSplit) != 2 {
+		return nil, fmt.Errorf("invalid principal ID: %s", principal.Id.Resource)
+	}
+	user := userSplit[1]
+
+	err := s.client.GrantRolePrivilege(ctx, roleName, user, privilege)
+	if err != nil {
+		return nil, fmt.Errorf("failed to grant %s on role %s to user %s: %w", privilege, roleName, user, err)
+	}
+
+	return nil, nil
+}
+
+func (s *roleSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	parts := strings.Split(grant.Entitlement.Id, ":")
+	if len(parts) != 4 {
+		return nil, fmt.Errorf("invalid entitlement ID: %s", grant.Entitlement.Id)
+	}
+	privilege := parts[1]
+	roleName := parts[3]
+
+	userSplit := strings.Split(grant.Principal.Id.Resource, ":")
+	if len(userSplit) != 2 {
+		return nil, fmt.Errorf("invalid principal ID: %s", grant.Principal.Id.Resource)
+	}
+	user := userSplit[1]
+
+	err := s.client.RevokeRolePrivilege(ctx, roleName, user, privilege)
+	if err != nil {
+		return nil, fmt.Errorf("failed to revoke %s on role %s from user %s: %w", privilege, roleName, user, err)
+	}
+
+	return nil, nil
 }

@@ -36,6 +36,21 @@ func (c *connectorImpl) Metadata(ctx context.Context) (*v2.ConnectorMetadata, er
 
 	return &v2.ConnectorMetadata{
 		DisplayName: sm.Name,
+		Description: "MySQL Connector",
+		AccountCreationSchema: &v2.ConnectorAccountCreationSchema{
+			FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+				"username": {
+					DisplayName: "Username",
+					Required:    true,
+					Description: "Username of the user",
+					Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+						StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+					},
+					Placeholder: "John08",
+					Order:       1,
+				},
+			},
+		},
 	}, nil
 }
 
@@ -57,19 +72,19 @@ func (c *connectorImpl) Asset(ctx context.Context, asset *v2.AssetRef) (string, 
 
 func (c *connectorImpl) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	syncers := []connectorbuilder.ResourceSyncer{
-		newServerSyncer(ctx, c.client),
-		newDatabaseSyncer(ctx, c.client, c.skipDbs),
-		newTableSyncer(ctx, c.client, c.expandCols),
-		newRoutineSyncer(ctx, c.client),
-		newUserSyncer(ctx, c.client, c.skipDbs, c.expandCols, c.collapseUsers),
+		newServerSyncer(c.client),
+		newDatabaseSyncer(c.client, c.skipDbs),
+		newTableSyncer(c.client, c.expandCols),
+		newRoutineSyncer(c.client),
+		newUserSyncer(c.client, c.skipDbs, c.expandCols, c.collapseUsers),
 	}
 
 	if c.client.IsVersion8() {
-		syncers = append(syncers, newRoleSyncer(ctx, c.client, c.skipDbs, c.expandCols))
+		syncers = append(syncers, newRoleSyncer(c.client, c.skipDbs, c.expandCols))
 	}
 
 	if len(c.expandCols) > 0 {
-		syncers = append(syncers, newColumnSyncer(ctx, c.client, c.expandCols))
+		syncers = append(syncers, newColumnSyncer(c.client, c.expandCols))
 	}
 
 	return syncers

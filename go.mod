@@ -5,7 +5,7 @@ go 1.23.4
 toolchain go1.23.9
 
 require (
-	github.com/conductorone/baton-sdk v0.3.9
+	github.com/conductorone/baton-sdk v0.3.10
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/jmoiron/sqlx v1.3.5

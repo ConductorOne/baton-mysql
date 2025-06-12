@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -49,7 +51,7 @@ func (s *serverSyncer) List(
 }
 
 func (s *serverSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	entitlements, err := getEntitlementsForResource(ctx, resource, s.client)
+	entitlements, err := getEntitlementsForResource(resource, s.client)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -61,9 +63,52 @@ func (s *serverSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken
 	return nil, "", nil, nil
 }
 
-func newServerSyncer(ctx context.Context, c *client.Client) *serverSyncer {
+func newServerSyncer(c *client.Client) *serverSyncer {
 	return &serverSyncer{
 		resourceType: resourceTypeServer,
 		client:       c,
 	}
+}
+
+func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	userResource := principal.Id.Resource
+	privilege := extractServerPrivilege(entitlement.Id)
+
+	user := strings.Split(userResource, ":")
+	userStr := user[1]
+	err := s.client.GrantServerPrivilege(ctx, userStr, privilege)
+	if err != nil {
+		return nil, fmt.Errorf("grant failed: %w", err)
+	}
+
+	return nil, nil
+}
+
+func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	userResource := grant.Principal.Id.Resource
+	privilege := extractServerPrivilege(grant.Entitlement.Id)
+
+	user := strings.Split(userResource, ":")
+	userStr := user[1]
+	err := s.client.RevokeServerPrivilege(ctx, userStr, privilege)
+	if err != nil {
+		return nil, fmt.Errorf("revoke failed: %w", err)
+	}
+
+	return nil, nil
+}
+
+func extractServerPrivilege(entitlementID string) string {
+	parts := strings.Split(entitlementID, ":")
+	if len(parts) < 3 {
+		return ""
+	}
+
+	privilegePart := parts[1]
+	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_WITH_GRANT", ""))
+
+	if strings.Contains(privilegePart, "_with_grant") {
+		return priv + " WITH GRANT OPTION"
+	}
+	return priv
 }

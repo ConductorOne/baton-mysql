@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -80,4 +81,75 @@ func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceI
 	}
 
 	return ret, nextPageToken, nil
+}
+
+// If the privilege is "grant", it grants SELECT, INSERT, UPDATE, and REFERENCES privileges.
+func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format: %s", user)
+	}
+	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+
+	var privileges []string
+	if strings.ToLower(privilege) == "grant" {
+		privileges = []string{"SELECT", "INSERT", "UPDATE", "REFERENCES"}
+	} else {
+		privileges = []string{strings.ToUpper(privilege)}
+	}
+
+	escapedTable, err := escapeMySQLIdent(table)
+	if err != nil {
+		return err
+	}
+	escapedColumn, err := escapeMySQLIdent(column)
+	if err != nil {
+		return err
+	}
+
+	var privilegeClauses []string
+	for _, priv := range privileges {
+		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, escapedColumn))
+	}
+	privilegesSQL := strings.Join(privilegeClauses, ", ")
+
+	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", privilegesSQL, escapedTable, userGrant)
+
+	_ = c.db.MustExec(query)
+	return nil
+}
+
+func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format: %s", user)
+	}
+	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+
+	var privileges []string
+	if strings.ToLower(privilege) == "grant" {
+		privileges = []string{"SELECT", "INSERT", "UPDATE", "REFERENCES"}
+	} else {
+		privileges = []string{strings.ToUpper(privilege)}
+	}
+
+	escapedTable, err := escapeMySQLIdent(table)
+	if err != nil {
+		return err
+	}
+	escapedColumn, err := escapeMySQLIdent(column)
+	if err != nil {
+		return err
+	}
+
+	var privilegeClauses []string
+	for _, priv := range privileges {
+		privilegeClauses = append(privilegeClauses, fmt.Sprintf("%s (%s)", priv, escapedColumn))
+	}
+	privilegesSQL := strings.Join(privilegeClauses, ", ")
+
+	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", privilegesSQL, escapedTable, userRevoke)
+
+	_ = c.db.MustExec(query)
+	return nil
 }

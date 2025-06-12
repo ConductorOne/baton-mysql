@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -80,4 +81,89 @@ func (c *Client) ListRoutines(ctx context.Context, parentResourceID *v2.Resource
 	}
 
 	return ret, nextPageToken, nil
+}
+
+func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, schema string, routineName string, user string) error {
+	routineType, err := c.GetRoutineType(ctx, schema, routineName)
+	if err != nil {
+		return err
+	}
+
+	schemaEsc, err := escapeMySQLIdent(schema)
+	if err != nil {
+		return err
+	}
+	routineNameEsc, err := escapeMySQLIdent(routineName)
+	if err != nil {
+		return err
+	}
+
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userGrant := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	query := fmt.Sprintf("GRANT %s ON %s %s.%s TO %s",
+		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userGrant)
+
+	_ = c.db.MustExec(query)
+	return nil
+}
+
+func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, schema string, routineName string, user string) error {
+	routineType, err := c.GetRoutineType(ctx, schema, routineName)
+	if err != nil {
+		return err
+	}
+
+	schemaEsc, err := escapeMySQLIdent(schema)
+	if err != nil {
+		return err
+	}
+	routineNameEsc, err := escapeMySQLIdent(routineName)
+	if err != nil {
+		return err
+	}
+
+	userSplit := strings.Split(user, "@")
+	if len(userSplit) != 2 {
+		return fmt.Errorf("invalid user format, expected user@host")
+	}
+	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	if err != nil {
+		return err
+	}
+	userRevoke := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
+
+	query := fmt.Sprintf("REVOKE %s ON %s %s.%s FROM %s",
+		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
+	_ = c.db.MustExec(query)
+	return nil
+}
+
+func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string) (string, error) {
+	query := `
+		SELECT ROUTINE_TYPE
+		FROM information_schema.ROUTINES
+		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?
+	`
+	var routineType string
+	err := c.db.QueryRowContext(ctx, query, schema, routineName).Scan(&routineType)
+	if err != nil {
+		return "", fmt.Errorf("failed to get routine type: %w", err)
+	}
+	return routineType, nil
 }
