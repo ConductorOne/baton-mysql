@@ -120,10 +120,13 @@ Usage:
   baton-mysql [command]
 
 Available Commands:
+  capabilities       Get connector capabilities
   completion         Generate the autocompletion script for the specified shell
   help               Help about any command
 
 Flags:
+      --client-id string           The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
+      --client-secret string       The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
       --collapse-users             Combine user@host pairs into a single user@[hosts...] identity $(BATON_COLLAPSE_USERS)
       --connection-string string   The connection string for connecting to MySQL ($BATON_CONNECTION_STRING)
       --expand-columns strings     Provide a table like db.table to expand the column privileges into their own entitlements. $(BATON_EXPAND_COLUMNS)
@@ -131,6 +134,7 @@ Flags:
   -h, --help                       help for baton-mysql
       --log-format string          The output format for logs: json, console ($BATON_LOG_FORMAT) (default "json")
       --log-level string           The log level: debug, info, warn, error ($BATON_LOG_LEVEL) (default "info")
+  -p, --provisioning               This must be set in order for provisioning actions to be enabled. ($BATON_PROVISIONING)
       --skip-database strings      Skip syncing privileges from these databases ($BATON_SKIP_DATABASE)
   -v, --version                    version for baton-mysql
 
