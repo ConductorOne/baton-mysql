@@ -19,10 +19,11 @@ import (
 var tracer = otel.Tracer("baton-sdk/pkg.dotc1z.manager.s3")
 
 type s3Manager struct {
-	client   *us3.S3Client
-	fileName string
-	tmpFile  string
-	tmpDir   string
+	client         *us3.S3Client
+	fileName       string
+	tmpFile        string
+	tmpDir         string
+	decoderOptions []dotc1z.DecoderOption
 }
 
 type Option func(*s3Manager)
@@ -30,6 +31,12 @@ type Option func(*s3Manager)
 func WithTmpDir(tmpDir string) Option {
 	return func(o *s3Manager) {
 		o.tmpDir = tmpDir
+	}
+}
+
+func WithDecoderOptions(opts ...dotc1z.DecoderOption) Option {
+	return func(o *s3Manager) {
+		o.decoderOptions = opts
 	}
 }
 
@@ -46,10 +53,29 @@ func (s *s3Manager) copyToTempFile(ctx context.Context, r io.Reader) error {
 	s.tmpFile = f.Name()
 
 	if r != nil {
-		_, err = io.Copy(f, r)
+		written, err := io.Copy(f, r)
 		if err != nil {
 			_ = f.Close()
 			return err
+		}
+
+		// CRITICAL: Sync to ensure all data is written before file is used.
+		// This is especially important on ZFS ARC where writes may be cached
+		// and reads can happen before buffers are flushed to disk.
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("failed to sync temp file: %w", err)
+		}
+
+		// Verify file size matches what we wrote (defensive check)
+		stat, err := f.Stat()
+		if err != nil {
+			_ = f.Close()
+			return fmt.Errorf("failed to stat temp file: %w", err)
+		}
+		if stat.Size() != written {
+			_ = f.Close()
+			return fmt.Errorf("file size mismatch: wrote %d bytes but file is %d bytes", written, stat.Size())
 		}
 	}
 
@@ -116,7 +142,14 @@ func (s *s3Manager) LoadC1Z(ctx context.Context) (*dotc1z.C1File, error) {
 		return nil, err
 	}
 
-	return dotc1z.NewC1ZFile(ctx, s.tmpFile, dotc1z.WithTmpDir(s.tmpDir))
+	opts := []dotc1z.C1ZOption{
+		dotc1z.WithTmpDir(s.tmpDir),
+		dotc1z.WithPragma("journal_mode", "WAL"),
+	}
+	if len(s.decoderOptions) > 0 {
+		opts = append(opts, dotc1z.WithDecoderOptions(s.decoderOptions...))
+	}
+	return dotc1z.NewC1ZFile(ctx, s.tmpFile, opts...)
 }
 
 // SaveC1Z saves a file to the AWS S3 bucket.
@@ -128,6 +161,7 @@ func (s *s3Manager) SaveC1Z(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 
 	if s.client == nil {
 		return fmt.Errorf("attempting to save to s3 without a valid client")

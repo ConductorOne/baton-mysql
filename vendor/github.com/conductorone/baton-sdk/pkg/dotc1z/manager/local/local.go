@@ -16,9 +16,10 @@ import (
 var tracer = otel.Tracer("baton-sdk/pkg.dotc1z.manager.local")
 
 type localManager struct {
-	filePath string
-	tmpPath  string
-	tmpDir   string
+	filePath       string
+	tmpPath        string
+	tmpDir         string
+	decoderOptions []dotc1z.DecoderOption
 }
 
 type Option func(*localManager)
@@ -26,6 +27,12 @@ type Option func(*localManager)
 func WithTmpDir(tmpDir string) Option {
 	return func(o *localManager) {
 		o.tmpDir = tmpDir
+	}
+}
+
+func WithDecoderOptions(opts ...dotc1z.DecoderOption) Option {
+	return func(o *localManager) {
+		o.decoderOptions = opts
 	}
 }
 
@@ -52,9 +59,35 @@ func (l *localManager) copyFileToTmp(ctx context.Context) error {
 		}
 		defer f.Close()
 
-		_, err = io.Copy(tmp, f)
+		// Get source file size for verification
+		sourceStat, err := f.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to stat source file: %w", err)
+		}
+		expectedSize := sourceStat.Size()
+
+		written, err := io.Copy(tmp, f)
 		if err != nil {
 			return err
+		}
+
+		// CRITICAL: Sync to ensure all data is written before file is used.
+		// This is especially important on ZFS ARC where writes may be cached
+		// and reads can happen before buffers are flushed to disk.
+		if err := tmp.Sync(); err != nil {
+			return fmt.Errorf("failed to sync temp file: %w", err)
+		}
+
+		// Verify file size matches what we wrote (defensive check)
+		stat, err := tmp.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to stat temp file: %w", err)
+		}
+		if stat.Size() != written {
+			return fmt.Errorf("file size mismatch: wrote %d bytes but file is %d bytes", written, stat.Size())
+		}
+		if written != expectedSize {
+			return fmt.Errorf("copy size mismatch: expected %d bytes from source but copied %d bytes", expectedSize, written)
 		}
 	}
 
@@ -95,9 +128,17 @@ func (l *localManager) LoadC1Z(ctx context.Context) (*dotc1z.C1File, error) {
 		"successfully loaded c1z locally",
 		zap.String("file_path", l.filePath),
 		zap.String("temp_path", l.tmpPath),
+		zap.String("tmp_dir", l.tmpDir),
 	)
 
-	return dotc1z.NewC1ZFile(ctx, l.tmpPath, dotc1z.WithTmpDir(l.tmpDir), dotc1z.WithPragma("journal_mode", "WAL"))
+	opts := []dotc1z.C1ZOption{
+		dotc1z.WithTmpDir(l.tmpDir),
+		dotc1z.WithPragma("journal_mode", "WAL"),
+	}
+	if len(l.decoderOptions) > 0 {
+		opts = append(opts, dotc1z.WithDecoderOptions(l.decoderOptions...))
+	}
+	return dotc1z.NewC1ZFile(ctx, l.tmpPath, opts...)
 }
 
 // SaveC1Z saves the C1Z file to the local file system.
@@ -132,10 +173,17 @@ func (l *localManager) SaveC1Z(ctx context.Context) error {
 		return err
 	}
 
+	// CRITICAL: Sync to ensure data is written before function returns.
+	// This is especially important on ZFS ARC where writes may be cached.
+	if err := dstFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync destination file: %w", err)
+	}
+
 	log.Debug(
 		"successfully saved c1z locally",
 		zap.String("file_path", l.filePath),
 		zap.String("temp_path", l.tmpPath),
+		zap.String("tmp_dir", l.tmpDir),
 		zap.Int64("bytes", size),
 	)
 

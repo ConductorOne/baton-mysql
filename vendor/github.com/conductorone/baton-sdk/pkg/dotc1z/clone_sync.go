@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/conductorone/baton-sdk/pkg/connectorstore"
 )
 
 func cloneTableQuery(tableName string) (string, error) {
@@ -76,7 +78,7 @@ func (c *C1File) CloneSync(ctx context.Context, outPath string, syncID string) (
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer out.Close(ctx)
 
 	err = out.init(ctx)
 	if err != nil {
@@ -84,7 +86,7 @@ func (c *C1File) CloneSync(ctx context.Context, outPath string, syncID string) (
 	}
 
 	if syncID == "" {
-		syncID, err = c.LatestSyncID(ctx)
+		syncID, err = c.LatestSyncID(ctx, connectorstore.SyncTypeFull)
 		if err != nil {
 			return err
 		}
@@ -140,7 +142,7 @@ func (c *C1File) CloneSync(ctx context.Context, outPath string, syncID string) (
 	}
 	outFile.dbUpdated = true
 	outFile.outputFilePath = outPath
-	err = outFile.Close()
+	err = outFile.Close(ctx)
 	if err != nil {
 		return err
 	}

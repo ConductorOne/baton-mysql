@@ -21,6 +21,7 @@ import (
 
 // TODO(morgabra): Fix the circular dependency/entire registry pattern here.
 const EncryptionProviderJwk = "baton/jwk/v1"
+const EncryptionProviderJwkPrivate = "baton/jwk/v1/private"
 
 var ErrJWKInvalidKeyType = errors.New("jwk: invalid key type")
 var ErrJWKUnsupportedKeyType = errors.New("jwk: unsupported key type")
@@ -36,7 +37,7 @@ func unmarshalJWK(jwkBytes []byte) (*jose.JSONWebKey, error) {
 
 type JWKEncryptionProvider struct{}
 
-func (j *JWKEncryptionProvider) GenerateKey(ctx context.Context) (*v2.EncryptionConfig, []byte, error) {
+func (j *JWKEncryptionProvider) GenerateKey(ctx context.Context) (*v2.EncryptionConfig, *jose.JSONWebKey, error) {
 	_, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("jwk: failed to generate key: %w", err)
@@ -48,33 +49,26 @@ func (j *JWKEncryptionProvider) GenerateKey(ctx context.Context) (*v2.Encryption
 	return j.marshalKey(ctx, privKeyJWK)
 }
 
-func (j *JWKEncryptionProvider) marshalKey(ctx context.Context, privKeyJWK *jose.JSONWebKey) (*v2.EncryptionConfig, []byte, error) {
-	privKeyJWKBytes, err := privKeyJWK.MarshalJSON()
-	if err != nil {
-		return nil, nil, fmt.Errorf("jwk: failed to marshal private key: %w", err)
-	}
-
+func (j *JWKEncryptionProvider) marshalKey(ctx context.Context, privKeyJWK *jose.JSONWebKey) (*v2.EncryptionConfig, *jose.JSONWebKey, error) {
 	pubKeyJWK := privKeyJWK.Public()
 	pubKeyJWKBytes, err := pubKeyJWK.MarshalJSON()
 	if err != nil {
 		return nil, nil, fmt.Errorf("jwk: failed to marshal public key: %w", err)
 	}
 
-	kid, err := thumbprint(&pubKeyJWK)
+	kid, err := Thumbprint(&pubKeyJWK)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return &v2.EncryptionConfig{
+	return v2.EncryptionConfig_builder{
 		Principal: nil,
 		Provider:  EncryptionProviderJwk, // TODO(morgabra): Fix the circular dependency/entire registry pattern.
 		KeyId:     kid,
-		Config: &v2.EncryptionConfig_JwkPublicKeyConfig{
-			JwkPublicKeyConfig: &v2.EncryptionConfig_JWKPublicKeyConfig{
-				PubKey: pubKeyJWKBytes,
-			},
-		},
-	}, privKeyJWKBytes, nil
+		JwkPublicKeyConfig: v2.EncryptionConfig_JWKPublicKeyConfig_builder{
+			PubKey: pubKeyJWKBytes,
+		}.Build(),
+	}.Build(), privKeyJWK, nil
 }
 
 func (j *JWKEncryptionProvider) Encrypt(ctx context.Context, conf *v2.EncryptionConfig, plainText *v2.PlaintextData) (*v2.EncryptedData, error) {
@@ -86,17 +80,17 @@ func (j *JWKEncryptionProvider) Encrypt(ctx context.Context, conf *v2.Encryption
 	var ciphertext []byte
 	switch pubKey := jwk.Public().Key.(type) {
 	case ed25519.PublicKey:
-		ciphertext, err = EncryptED25519(pubKey, plainText.Bytes)
+		ciphertext, err = EncryptED25519(pubKey, plainText.GetBytes())
 		if err != nil {
 			return nil, err
 		}
 	case *ecdsa.PublicKey:
-		ciphertext, err = EncryptECDSA(pubKey, plainText.Bytes)
+		ciphertext, err = EncryptECDSA(pubKey, plainText.GetBytes())
 		if err != nil {
 			return nil, err
 		}
 	case *rsa.PublicKey:
-		ciphertext, err = EncryptRSA(pubKey, plainText.Bytes)
+		ciphertext, err = EncryptRSA(pubKey, plainText.GetBytes())
 		if err != nil {
 			return nil, err
 		}
@@ -104,35 +98,26 @@ func (j *JWKEncryptionProvider) Encrypt(ctx context.Context, conf *v2.Encryption
 		return nil, ErrJWKUnsupportedKeyType
 	}
 
-	tp, err := thumbprint(jwk)
+	tp, err := Thumbprint(jwk)
 	if err != nil {
 		return nil, err
 	}
 
 	encCipherText := base64.StdEncoding.EncodeToString(ciphertext)
 
-	return &v2.EncryptedData{
+	return v2.EncryptedData_builder{
 		Provider:       EncryptionProviderJwk,
 		KeyId:          tp,
-		Name:           plainText.Name,
-		Description:    plainText.Description,
-		Schema:         plainText.Schema,
+		Name:           plainText.GetName(),
+		Description:    plainText.GetDescription(),
+		Schema:         plainText.GetSchema(),
 		EncryptedBytes: []byte(encCipherText),
 		KeyIds:         []string{tp},
-	}, nil
+	}.Build(), nil
 }
 
-func (j *JWKEncryptionProvider) Decrypt(ctx context.Context, cipherText *v2.EncryptedData, privateKey []byte) (*v2.PlaintextData, error) {
-	jwk, err := unmarshalJWK(privateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	if jwk.IsPublic() {
-		return nil, fmt.Errorf("%w: key is public", ErrJWKInvalidKeyType)
-	}
-
-	decCipherText, err := base64.StdEncoding.DecodeString(string(cipherText.EncryptedBytes))
+func (j *JWKEncryptionProvider) Decrypt(ctx context.Context, cipherText *v2.EncryptedData, jwk *jose.JSONWebKey) (*v2.PlaintextData, error) {
+	decCipherText, err := base64.StdEncoding.DecodeString(string(cipherText.GetEncryptedBytes()))
 	if err != nil {
 		return nil, fmt.Errorf("jwk: failed to decode encrypted bytes: %w", err)
 	}
@@ -158,15 +143,15 @@ func (j *JWKEncryptionProvider) Decrypt(ctx context.Context, cipherText *v2.Encr
 		return nil, ErrJWKUnsupportedKeyType
 	}
 
-	return &v2.PlaintextData{
-		Name:        cipherText.Name,
-		Description: cipherText.Description,
-		Schema:      cipherText.Schema,
+	return v2.PlaintextData_builder{
+		Name:        cipherText.GetName(),
+		Description: cipherText.GetDescription(),
+		Schema:      cipherText.GetSchema(),
 		Bytes:       plaintext,
-	}, nil
+	}.Build(), nil
 }
 
-func thumbprint(jwk *jose.JSONWebKey) (string, error) {
+func Thumbprint(jwk *jose.JSONWebKey) (string, error) {
 	tp, err := jwk.Thumbprint(crypto.SHA256)
 	if err != nil {
 		return "", fmt.Errorf("jwk: failed to compute key id: %w", err)
