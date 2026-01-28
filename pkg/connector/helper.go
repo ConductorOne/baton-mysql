@@ -31,7 +31,7 @@ func isPasswordValid(password string) bool {
 }
 
 // generateCredentials if the credential option is "Random Password", it returns a randomly generated password.
-func generateCredentials(credentialOptions *v2.CredentialOptions) (string, error) {
+func generateCredentials(credentialOptions *v2.LocalCredentialOptions) (string, error) {
 	if credentialOptions.GetRandomPassword() == nil {
 		return "", errors.New("unsupported credential option")
 	}
@@ -39,7 +39,7 @@ func generateCredentials(credentialOptions *v2.CredentialOptions) (string, error
 	const maxAttempts = 20
 	for i := 0; i < maxAttempts; i++ {
 		password, err := crypto.GenerateRandomPassword(
-			&v2.CredentialOptions_RandomPassword{
+			&v2.LocalCredentialOptions_RandomPassword{
 				Length: min(12, credentialOptions.GetRandomPassword().GetLength()),
 			},
 		)

@@ -19,8 +19,8 @@ func titleCase(s string) string {
 	return titleCaser.String(s)
 }
 
-// connectorImpl implements the ConnectorServer interface for syncing with a MySQL server.
-type connectorImpl struct {
+// Connector implements the ConnectorServer interface for syncing with a MySQL server.
+type Connector struct {
 	client        *client.Client
 	skipDbs       map[string]struct{}
 	expandCols    map[string]struct{}
@@ -28,7 +28,7 @@ type connectorImpl struct {
 }
 
 // Metadata returns metadata about the connector. This currently includes the hostname for the server.
-func (c *connectorImpl) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
+func (c *Connector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	sm, err := c.client.GetServerInfo(ctx)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (c *connectorImpl) Metadata(ctx context.Context) (*v2.ConnectorMetadata, er
 }
 
 // Validate the connection to the MySQL service.
-func (c *connectorImpl) Validate(ctx context.Context) (annotations.Annotations, error) {
+func (c *Connector) Validate(ctx context.Context) (annotations.Annotations, error) {
 	err := c.client.ValidateConnection(ctx)
 	if err != nil {
 		return nil, err
@@ -66,11 +66,11 @@ func (c *connectorImpl) Validate(ctx context.Context) (annotations.Annotations, 
 
 // Asset returns the content-type and a ReadCloser for fetching the asset
 // The MySQL connector doesn't emit any assets.
-func (c *connectorImpl) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadCloser, error) {
+func (c *Connector) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadCloser, error) {
 	return "", nil, nil
 }
 
-func (c *connectorImpl) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+func (c *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	syncers := []connectorbuilder.ResourceSyncer{
 		newServerSyncer(c.client),
 		newDatabaseSyncer(c.client, c.skipDbs),
@@ -91,7 +91,7 @@ func (c *connectorImpl) ResourceSyncers(ctx context.Context) []connectorbuilder.
 }
 
 // New returns a new MySQL connector.
-func New(ctx context.Context, dsn string, skipDbs []string, expandColumns []string, collapseUsers bool) (*connectorImpl, error) {
+func New(ctx context.Context, dsn string, skipDbs []string, expandColumns []string, collapseUsers bool) (*Connector, error) {
 	c, err := client.New(ctx, dsn)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func New(ctx context.Context, dsn string, skipDbs []string, expandColumns []stri
 	for _, table := range expandColumns {
 		expandCols[table] = struct{}{}
 	}
-	return &connectorImpl{
+	return &Connector{
 		client:        c,
 		skipDbs:       dbs,
 		expandCols:    expandCols,

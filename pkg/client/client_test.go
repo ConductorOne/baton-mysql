@@ -140,7 +140,7 @@ func genUsersAndRoles(r *rand.Rand, userCount int, roleCount int) (map[string]st
 
 func Test_generateRandomGrants(t *testing.T) {
 	t.Skip()
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404 -- weak RNG acceptable for test data
 	ctx := context.Background()
 	databases := make(map[string]dbResourceID)
 	tables := make(map[string]dbResourceID)
@@ -344,8 +344,8 @@ func Test_generateRandomGrants(t *testing.T) {
 		}
 	}
 
-	fmt.Printf("Grants\n%s\n", grantStatements.String())
-	fmt.Printf("Cleanup\n%s\n", cleanupStatements.String())
+	t.Logf("Grants\n%s\n", grantStatements.String())
+	t.Logf("Cleanup\n%s\n", cleanupStatements.String())
 }
 
 func randomPrivs(r *rand.Rand, privs []string, n int) []string {
