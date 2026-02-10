@@ -1,6 +1,6 @@
 ![Baton Logo](./docs/images/baton-logo.png)
 
-# `baton-mysql` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-mysql.svg)](https://pkg.go.dev/github.com/conductorone/baton-mysql) ![main ci](https://github.com/conductorone/baton-mysql/actions/workflows/main.yaml/badge.svg)
+# `baton-mysql` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-mysql.svg)](https://pkg.go.dev/github.com/conductorone/baton-mysql) ![ci](https://github.com/conductorone/baton-mysql/actions/workflows/ci.yaml/badge.svg) ![verify](https://github.com/conductorone/baton-mysql/actions/workflows/verify.yaml/badge.svg)
 
 `baton-mysql` is a connector for MySQL 5.7 and 8.\* built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It connects to your MySQL cluster and syncs privilege information about what access is granted to various users and roles.
 
