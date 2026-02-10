@@ -8,7 +8,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/jmoiron/sqlx v1.3.5
-	github.com/quasilyte/go-ruleguard/dsl v0.3.22
+	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.1
