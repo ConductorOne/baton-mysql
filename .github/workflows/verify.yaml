@@ -10,7 +10,7 @@ on:
 
 jobs:
   verify:
-    uses: ConductorOne/github-workflows/.github/workflows/verify.yaml@v4
+    uses: ConductorOne/github-workflows/.github/workflows/verify.yaml@gontzess/move-regression-workflow-local
     with:
       ref: ${{ github.event.pull_request.head.sha || github.sha }}
       connector: baton-mysql
