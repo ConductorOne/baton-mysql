@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    types: [opened, reopened, synchronize]
 
 jobs:
   generate_outputs:
@@ -16,6 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.RELENG_GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -28,9 +31,50 @@ jobs:
       - name: Run and save capabilities output
         run: ./connector capabilities > baton_capabilities.json
 
+      # On push to main: commit the metadata files
       - name: Commit changes
+        if: github.event_name == 'push'
         uses: EndBug/add-and-commit@v9
         with:
           default_author: github_actions
           message: "Updating baton capabilities."
           add: "baton_capabilities.json"
+
+      # On PR: verify docs reflect current metadata
+      - name: Verify docs match current metadata
+        if: github.event_name == 'pull_request'
+        run: |
+          CAPS_CHANGED=false
+          CONFIG_CHANGED=false
+
+          # Compare newly generated metadata with committed versions
+          if [ -f baton_capabilities.json ]; then
+            if ! git diff --quiet HEAD -- baton_capabilities.json 2>/dev/null; then
+              CAPS_CHANGED=true
+            fi
+          fi
+
+          if [ "$CAPS_CHANGED" = "false" ] && [ "$CONFIG_CHANGED" = "false" ]; then
+            echo "Metadata unchanged — no doc update needed."
+            exit 0
+          fi
+
+          # Check if docs/connector.mdx was updated in this PR
+          BASE_SHA=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+          DOCS_CHANGED=false
+          if [ -n "$BASE_SHA" ]; then
+            if git diff --name-only "$BASE_SHA" HEAD | grep -q "docs/connector.mdx"; then
+              DOCS_CHANGED=true
+            fi
+          fi
+
+          if [ "$DOCS_CHANGED" = "true" ]; then
+            echo "Metadata changed and docs were updated — check passed."
+            exit 0
+          fi
+
+          echo "::error::Connector capabilities or config schema changed but docs/connector.mdx was not updated."
+          echo "::error::Run the fix-ci-checks skill locally to update docs from the current metadata."
+          echo "Capabilities changed: $CAPS_CHANGED"
+          echo "Config changed: $CONFIG_CHANGED"
+          exit 1
