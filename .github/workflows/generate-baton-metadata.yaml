@@ -40,9 +40,40 @@ jobs:
           message: "Updating baton capabilities."
           add: "baton_capabilities.json"
 
+      # On PR: verify committed JSON matches binary output
+      - name: Verify committed metadata is up to date
+        id: metadata-check
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          CAPS_STALE=false
+          CONFIG_STALE=false
+
+          if ! git diff --quiet -- baton_capabilities.json 2>/dev/null; then
+            CAPS_STALE=true
+            echo "::warning::baton_capabilities.json differs from binary output"
+            git diff -- baton_capabilities.json
+          fi
+
+          if [ "$CAPS_STALE" = "true" ] || [ "$CONFIG_STALE" = "true" ]; then
+            echo ""
+            echo "::error::The committed baton_capabilities.json and/or config_schema.json are out of date."
+            echo "::error::The connector binary generates different metadata than what's committed."
+            echo "::error::Run './connector capabilities > baton_capabilities.json' and './connector config > config_schema.json' locally, then commit the updated files."
+            echo "::error::Or use the fix-ci-checks skill to update automatically."
+            echo ""
+            echo "Capabilities stale: $CAPS_STALE"
+            echo "Config stale: $CONFIG_STALE"
+            exit 1
+          fi
+
+          echo "Committed metadata matches binary output."
+
       # On PR: verify docs reflect current metadata
       - name: Verify docs match current metadata
-        if: github.event_name == 'pull_request'
+        id: docs-check
+        if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
         run: |
           CAPS_CHANGED=false
           CONFIG_CHANGED=false
@@ -78,3 +109,12 @@ jobs:
           echo "Capabilities changed: $CAPS_CHANGED"
           echo "Config changed: $CONFIG_CHANGED"
           exit 1
+
+      # Fail the job if either PR check failed
+      - name: Enforce PR check results
+        if: github.event_name == 'pull_request' && always()
+        run: |
+          if [ "${{ steps.metadata-check.outcome }}" = "failure" ] || [ "${{ steps.docs-check.outcome }}" = "failure" ]; then
+            echo "One or more PR checks failed. See above for details."
+            exit 1
+          fi
