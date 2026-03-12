@@ -10,7 +10,7 @@ on:
 
 jobs:
   generate_outputs:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
     steps:
@@ -31,19 +31,38 @@ jobs:
       - name: Run and save capabilities output
         run: ./connector capabilities > baton_capabilities.json
 
-      # On push to main: commit the metadata files
       - name: Commit changes
-        if: github.event_name == 'push'
         uses: EndBug/add-and-commit@v9
         with:
           default_author: github_actions
           message: "Updating baton capabilities."
           add: "baton_capabilities.json"
 
-      # On PR: verify committed JSON matches binary output
+  validate_metadata:
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELENG_GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Build
+        run: go build -o connector ./cmd/baton-mysql
+
+      - name: Run and save capabilities output
+        run: ./connector capabilities > baton_capabilities.json
+
+      # Check 1: verify committed JSON matches binary output
       - name: Verify committed metadata is up to date
         id: metadata-check
-        if: github.event_name == 'pull_request'
         continue-on-error: true
         run: |
           CAPS_STALE=false
@@ -69,18 +88,20 @@ jobs:
 
           echo "Committed metadata matches binary output."
 
-      # On PR: verify docs reflect current metadata
+      # Check 2: verify docs reflect current metadata
       - name: Verify docs match current metadata
         id: docs-check
-        if: github.event_name == 'pull_request' && always()
+        if: always()
         continue-on-error: true
         run: |
           CAPS_CHANGED=false
           CONFIG_CHANGED=false
 
-          # Compare newly generated metadata with committed versions
-          if [ -f baton_capabilities.json ]; then
-            if ! git diff --quiet HEAD -- baton_capabilities.json 2>/dev/null; then
+          BASE_SHA=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+
+          # Compare PR's committed metadata with main to detect changes in this PR
+          if [ -n "$BASE_SHA" ]; then
+            if ! git diff --quiet "$BASE_SHA" HEAD -- baton_capabilities.json 2>/dev/null; then
               CAPS_CHANGED=true
             fi
           fi
@@ -91,7 +112,6 @@ jobs:
           fi
 
           # Check if docs/connector.mdx was updated in this PR
-          BASE_SHA=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
           DOCS_CHANGED=false
           if [ -n "$BASE_SHA" ]; then
             if git diff --name-only "$BASE_SHA" HEAD | grep -q "docs/connector.mdx"; then
@@ -112,9 +132,19 @@ jobs:
 
       # Fail the job if either PR check failed
       - name: Enforce PR check results
-        if: github.event_name == 'pull_request' && always()
+        if: always()
         run: |
-          if [ "${{ steps.metadata-check.outcome }}" = "failure" ] || [ "${{ steps.docs-check.outcome }}" = "failure" ]; then
-            echo "One or more PR checks failed. See above for details."
+          FAILURES=""
+          if [ "${{ steps.metadata-check.outcome }}" = "failure" ]; then
+            FAILURES="${FAILURES}\n- Committed metadata is out of date"
+          fi
+          if [ "${{ steps.docs-check.outcome }}" = "failure" ]; then
+            FAILURES="${FAILURES}\n- Docs not updated to match metadata changes"
+          fi
+          if [ -n "$FAILURES" ]; then
+            echo "PR checks failed:"
+            echo -e "$FAILURES"
+            echo ""
+            echo "Run the fix-ci-checks skill to resolve these issues."
             exit 1
           fi
