@@ -10,6 +10,7 @@ var (
 		"connection-string",
 		field.WithDescription("The connection string for connecting to MySQL ($BATON_CONNECTION_STRING)"),
 		field.WithRequired(true),
+		field.WithIsSecret(true),
 	)
 	SkipDatabases = field.StringSliceField(
 		"skip-database",
