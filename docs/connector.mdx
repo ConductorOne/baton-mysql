@@ -1,0 +1,227 @@
+---
+title: "Set up a MySQL connector"
+og:title: "Set up a MySQL connector"
+description: "ConductorOne provides identity governance for MySQL. Integrate your MySQL instance with ConductorOne to run user access reviews (UARs), enable just-in-time access requests, and automatically provision and deprovision access."
+og:description: "ConductorOne provides identity governance for MySQL. Integrate your MySQL instance with ConductorOne to run user access reviews (UARs), enable just-in-time access requests, and automatically provision and deprovision access."
+sidebarTitle: "MySQL"
+---
+
+{/* AUTO-GENERATED:START - capabilities
+     Generated from baton_capabilities.json. Do not edit manually. */}
+
+## Capabilities
+
+The MySQL connector syncs the following resources:
+
+| Resource | Sync | Provision |
+| :--- | :--- | :--- |
+| Databases | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | <Icon icon="square-check" iconType="solid" color="#c937ae"/> Grant, Revoke |
+| Routines | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | <Icon icon="square-check" iconType="solid" color="#c937ae"/> Grant, Revoke |
+| Servers | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | <Icon icon="square-check" iconType="solid" color="#c937ae"/> Grant, Revoke |
+| Tables | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | <Icon icon="square-check" iconType="solid" color="#c937ae"/> Grant, Revoke |
+| Users | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | <Icon icon="square-check" iconType="solid" color="#c937ae"/> Create, Delete |
+
+{/* AUTO-GENERATED:END - capabilities */}
+
+**Notes:**
+
+- Roles are synced and their privilege assignments can be granted and revoked on **MySQL 8+** only. The role resource type is enabled automatically when a MySQL 8 server is detected.
+- Columns are synced as sub-resources of tables when the `--expand-columns` flag is configured.
+
+## Gather MySQL credentials
+
+<Warning>
+  The ConductorOne connector requires a dedicated MySQL user with `SELECT`
+  privileges on the `mysql` system database tables that contain privilege
+  information. Creating a least-privilege user is strongly recommended over
+  using a root account.
+</Warning>
+
+### Create a MySQL connector user
+
+<Steps>
+  <Step>
+    Log in to your MySQL server using an account with `GRANT` privileges (for example, `root`).
+  </Step>
+  <Step>
+    Create a dedicated user for the connector:
+
+    ```sql
+    CREATE USER conductorone IDENTIFIED BY 'secure-password';
+    ```
+  </Step>
+  <Step>
+    Grant the minimum required privileges. Choose the block that matches your MySQL version.
+
+    **MySQL 5.7:**
+
+    ```sql
+    GRANT SELECT (Host, User, Db, Select_priv, Insert_priv, Update_priv, Delete_priv,
+                  Create_priv, Drop_priv, Grant_priv, References_priv, Index_priv, Alter_priv,
+                  Create_tmp_table_priv, Lock_tables_priv, Execute_priv, Create_view_priv,
+                  Show_view_priv, Create_routine_priv, Alter_routine_priv, Event_priv,
+                  Trigger_priv) ON mysql.db TO conductorone;
+    GRANT SELECT (Host, User, Db, Table_priv, Table_name) ON mysql.tables_priv TO conductorone;
+    GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO conductorone;
+    GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv, Delete_priv, Create_priv,
+                  Drop_priv, Reload_priv, Shutdown_priv, Process_priv, References_priv, Index_priv,
+                  Alter_priv, Show_db_priv, Super_priv, Create_tmp_table_priv, Lock_tables_priv,
+                  Execute_priv, Repl_slave_priv, Repl_client_priv, Create_view_priv, Show_view_priv,
+                  Create_routine_priv, Alter_routine_priv, Create_user_priv, Event_priv, Trigger_priv,
+                  Create_tablespace_priv, File_priv, Grant_priv, authentication_string) ON mysql.user TO conductorone;
+    ```
+
+    **MySQL 8+:**
+
+    ```sql
+    GRANT SELECT (USER, HOST, PRIV, WITH_GRANT_OPTION) ON mysql.global_grants TO conductorone;
+    GRANT SELECT (Host, User, Db, Select_priv, Insert_priv, Update_priv, Delete_priv,
+                  Create_priv, Drop_priv, Grant_priv, References_priv, Index_priv, Alter_priv,
+                  Create_tmp_table_priv, Lock_tables_priv, Execute_priv, Create_view_priv,
+                  Show_view_priv, Create_routine_priv, Alter_routine_priv, Event_priv,
+                  Trigger_priv) ON mysql.db TO conductorone;
+    GRANT SELECT (Host, User, Db, Table_priv, Table_name) ON mysql.tables_priv TO conductorone;
+    GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO conductorone;
+    GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv, Delete_priv, Create_priv,
+                  Drop_priv, Reload_priv, Shutdown_priv, Process_priv, References_priv, Index_priv,
+                  Alter_priv, Show_db_priv, Super_priv, Create_tmp_table_priv, Lock_tables_priv,
+                  Execute_priv, Repl_slave_priv, Repl_client_priv, Create_view_priv, Show_view_priv,
+                  Create_routine_priv, Alter_routine_priv, Create_user_priv, Event_priv, Trigger_priv,
+                  Create_tablespace_priv, Create_role_priv, Drop_role_priv, File_priv, Grant_priv,
+                  authentication_string) ON mysql.user TO conductorone;
+    GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO conductorone;
+    ```
+  </Step>
+  <Step>
+    Grant `SELECT` on all databases so the connector can introspect schemas:
+
+    ```sql
+    GRANT SELECT ON *.* TO conductorone;
+    ```
+  </Step>
+  <Step>
+    Note the connection string in DSN format — you will need it when configuring the connector:
+
+    ```
+    conductorone:secure-password@tcp(your-mysql-host:3306)/
+    ```
+  </Step>
+</Steps>
+
+That's it! You now have the credentials needed to configure the connector.
+
+## Configure the MySQL connector
+
+<Warning>
+  You must have the **Connector Administrator** or **Super Administrator** role in ConductorOne to add a connector. You will need:
+
+  - MySQL connection string (`user:password@tcp(host:port)/`)
+</Warning>
+
+<Tabs>
+  <Tab title="Cloud-hosted">
+    <Steps>
+      <Step>
+        In ConductorOne, go to **Connectors** and click **Add connector**.
+      </Step>
+      <Step>
+        Search for **MySQL** and select it.
+      </Step>
+      <Step>
+        Set an owner and click **Next**.
+      </Step>
+      <Step>
+        Click **Edit Settings** and enter the connector configuration.
+
+{/* AUTO-GENERATED:START - config-params
+     Generated from config_schema.json. Do not edit manually. */}
+
+        - **connection-string** (required): The connection string for connecting to MySQL in DSN format, e.g. `user:password@tcp(host:3306)/`
+        - **skip-database**: Comma-separated list of database names to exclude from the sync.
+        - **expand-columns**: Tables (in `db.table` format) whose column-level privileges should be surfaced as individual entitlements.
+        - **collapse-users**: When enabled, combines `user@host` pairs that share the same username into a single identity.
+
+{/* AUTO-GENERATED:END - config-params */}
+      </Step>
+      <Step>
+        Click **Save**. The connector will begin syncing and show **Connected** when complete.
+      </Step>
+    </Steps>
+
+    **Done.** Your MySQL connector is now pulling access data into ConductorOne.
+  </Tab>
+  <Tab title="Self-hosted">
+    ### Resources
+
+    - Binary and packages: [https://dist.conductorone.com/ConductorOne/baton-mysql](https://dist.conductorone.com/ConductorOne/baton-mysql)
+    - Source code: [https://github.com/conductorone/baton-mysql](https://github.com/conductorone/baton-mysql)
+
+    ### Step 1
+
+    Add a Baton connector in ConductorOne and rotate credentials to get a C1 Client ID and Client Secret.
+
+    <Steps>
+      <Step>
+        In ConductorOne, go to **Connectors** → **Add connector** → **Baton**.
+      </Step>
+      <Step>
+        Name the connector and set an owner, then save.
+      </Step>
+      <Step>
+        On the connector detail page, click **Rotate credentials** and copy the **Client ID** and **Client Secret**.
+      </Step>
+    </Steps>
+
+    ### Step 2
+
+    Deploy the connector using Kubernetes. Create the following manifests:
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: baton-mysql-secret
+    type: Opaque
+    stringData:
+      BATON_CLIENT_ID: "<C1 Client ID>"
+      BATON_CLIENT_SECRET: "<C1 Client Secret>"
+      BATON_CONNECTION_STRING: "<user:password@tcp(host:3306)/>"
+    ```
+
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: baton-mysql
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: baton-mysql
+      template:
+        metadata:
+          labels:
+            app: baton-mysql
+        spec:
+          containers:
+            - name: baton-mysql
+              image: public.ecr.aws/conductorone/baton-mysql:latest
+              envFrom:
+                - secretRef:
+                    name: baton-mysql-secret
+    ```
+
+    ### Step 3
+
+    Apply the manifests and verify the connector appears as **Connected** in ConductorOne.
+
+    ```bash
+    kubectl apply -f baton-mysql-secret.yaml
+    kubectl apply -f baton-mysql-deployment.yaml
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Download the `baton-mysql` binary and packages from the [ConductorOne distribution center](https://dist.conductorone.com/ConductorOne/baton-mysql).
+</Tip>
