@@ -79,7 +79,7 @@ func (c *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.Reso
 		newUserSyncer(c.client, c.skipDbs, c.expandCols, c.collapseUsers),
 	}
 
-	if c.client.IsVersion8() {
+	if c.client != nil && c.client.IsVersion8() {
 		syncers = append(syncers, newRoleSyncer(c.client, c.skipDbs, c.expandCols))
 	}
 

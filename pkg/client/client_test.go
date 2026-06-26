@@ -286,18 +286,18 @@ func Test_generateRandomGrants(t *testing.T) {
 					_, _ = grantStatements.WriteString(", ")
 				}
 
-				_, _ = grantStatements.WriteString(fmt.Sprintf(`%s (`, p))
+				_, _ = fmt.Fprintf(&grantStatements, "%s (", p)
 				for jj, col := range g.resourceIDs {
 					if jj != 0 {
 						_, _ = grantStatements.WriteString(", ")
 					}
-					_, _ = grantStatements.WriteString(fmt.Sprintf("`%s`", col.SubResourceName))
+					_, _ = fmt.Fprintf(&grantStatements, "`%s`", col.SubResourceName)
 				}
 				_, _ = grantStatements.WriteString(")")
 			}
 			resourceString, err := g.resourceIDs[0].SQLString()
 			require.NoError(t, err)
-			_, _ = grantStatements.WriteString(fmt.Sprintf(" ON %s TO %s;", resourceString, accountID))
+			_, _ = fmt.Fprintf(&grantStatements, " ON %s TO %s;", resourceString, accountID)
 			_ = grantStatements.WriteByte('\n')
 
 		case TableType:
@@ -318,7 +318,7 @@ func Test_generateRandomGrants(t *testing.T) {
 			}
 			resourceString, err := g.resourceIDs[0].SQLString()
 			require.NoError(t, err)
-			_, _ = grantStatements.WriteString(fmt.Sprintf(" ON %s TO %s;\n", resourceString, accountID))
+			_, _ = fmt.Fprintf(&grantStatements, " ON %s TO %s;\n", resourceString, accountID)
 
 		case DatabaseType:
 			privs := randomPrivs(r, dbPrivs(), privCount)
@@ -338,7 +338,7 @@ func Test_generateRandomGrants(t *testing.T) {
 			}
 			resourceString, err := g.resourceIDs[0].SQLString()
 			require.NoError(t, err)
-			_, _ = grantStatements.WriteString(fmt.Sprintf(" ON %s.* TO %s;\n", resourceString, accountID))
+			_, _ = fmt.Fprintf(&grantStatements, " ON %s.* TO %s;\n", resourceString, accountID)
 		default:
 			require.NoError(t, fmt.Errorf("invalid resource type for grant item"))
 		}
