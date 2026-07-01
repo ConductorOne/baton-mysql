@@ -47,12 +47,12 @@ func (t dbResourceID) Column() dbResourceID {
 
 func (t dbResourceID) SQLString() (string, error) {
 	var sb strings.Builder
-	_, err := sb.WriteString(fmt.Sprintf("`%s`", t.DatabaseName))
+	_, err := fmt.Fprintf(&sb, "`%s`", t.DatabaseName)
 	if err != nil {
 		return "", err
 	}
 	if t.ResourceName != "" && (t.ResourceTypeID == TableType || t.ResourceTypeID == ColumnType) {
-		_, err = sb.WriteString(fmt.Sprintf(".`%s`", t.ResourceName))
+		_, err = fmt.Fprintf(&sb, ".`%s`", t.ResourceName)
 		if err != nil {
 			return "", err
 		}
@@ -63,15 +63,13 @@ func (t dbResourceID) SQLString() (string, error) {
 
 func (t dbResourceID) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s:%s", t.ResourceTypeID, t.DatabaseName))
+	fmt.Fprintf(&sb, "%s:%s", t.ResourceTypeID, t.DatabaseName)
 
 	if t.ResourceName != "" {
-		sb.WriteString(".")
-		sb.WriteString(t.ResourceName)
+		fmt.Fprintf(&sb, ".%s", t.ResourceName)
 
 		if t.SubResourceName != "" {
-			sb.WriteString(".")
-			sb.WriteString(t.SubResourceName)
+			fmt.Fprintf(&sb, ".%s", t.SubResourceName)
 		}
 	}
 
