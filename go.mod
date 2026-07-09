@@ -3,7 +3,7 @@ module github.com/conductorone/baton-mysql
 go 1.25.2
 
 require (
-	github.com/conductorone/baton-sdk v0.17.0
+	github.com/conductorone/baton-sdk v0.18.0
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
