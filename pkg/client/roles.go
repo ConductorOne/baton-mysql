@@ -3,33 +3,32 @@ package client
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege string) error {
-	roleParts := strings.Split(role, "@")
-	if len(roleParts) != 2 {
+	roleName, roleHostRaw, err := SplitUserHost(role)
+	if err != nil {
 		return fmt.Errorf("invalid role format: %s", role)
 	}
 
-	userParts := strings.Split(user, "@")
-	if len(userParts) != 2 {
+	userName, userHostRaw, err := SplitUserHost(user)
+	if err != nil {
 		return fmt.Errorf("invalid user format: %s", user)
 	}
 
-	roleUser, err := escapeMySQLUserHost(roleParts[0])
+	roleUser, err := escapeMySQLUserHost(roleName)
 	if err != nil {
 		return err
 	}
-	roleHost, err := escapeMySQLUserHost(roleParts[1])
+	roleHost, err := escapeMySQLUserHost(roleHostRaw)
 	if err != nil {
 		return err
 	}
-	targetUser, err := escapeMySQLUserHost(userParts[0])
+	targetUser, err := escapeMySQLUserHost(userName)
 	if err != nil {
 		return err
 	}
-	targetHost, err := escapeMySQLUserHost(userParts[1])
+	targetHost, err := escapeMySQLUserHost(userHostRaw)
 	if err != nil {
 		return err
 	}
@@ -53,29 +52,29 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 }
 
 func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege string) error {
-	roleParts := strings.Split(role, "@")
-	if len(roleParts) != 2 {
+	roleName, roleHostRaw, err := SplitUserHost(role)
+	if err != nil {
 		return fmt.Errorf("invalid role format: %s", role)
 	}
 
-	userParts := strings.Split(user, "@")
-	if len(userParts) != 2 {
+	userName, userHostRaw, err := SplitUserHost(user)
+	if err != nil {
 		return fmt.Errorf("invalid user format: %s", user)
 	}
 
-	roleUser, err := escapeMySQLUserHost(roleParts[0])
+	roleUser, err := escapeMySQLUserHost(roleName)
 	if err != nil {
 		return err
 	}
-	roleHost, err := escapeMySQLUserHost(roleParts[1])
+	roleHost, err := escapeMySQLUserHost(roleHostRaw)
 	if err != nil {
 		return err
 	}
-	targetUser, err := escapeMySQLUserHost(userParts[0])
+	targetUser, err := escapeMySQLUserHost(userName)
 	if err != nil {
 		return err
 	}
-	targetHost, err := escapeMySQLUserHost(userParts[1])
+	targetHost, err := escapeMySQLUserHost(userHostRaw)
 	if err != nil {
 		return err
 	}

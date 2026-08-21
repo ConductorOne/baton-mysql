@@ -40,15 +40,15 @@ func (c *Client) ExecContext(ctx context.Context, query string) (sql.Result, err
 }
 
 func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
+	userName, host, err := SplitUserHost(user)
+	if err != nil {
+		return fmt.Errorf("invalid user format, expected user@host: %w", err)
 	}
-	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	userEsc, err := escapeMySQLUserHost(userName)
 	if err != nil {
 		return err
 	}
-	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	hostEsc, err := escapeMySQLUserHost(host)
 	if err != nil {
 		return err
 	}
@@ -60,15 +60,15 @@ func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privileg
 }
 
 func (c *Client) RevokeServerPrivilege(ctx context.Context, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
+	userName, host, err := SplitUserHost(user)
+	if err != nil {
+		return fmt.Errorf("invalid user format, expected user@host: %w", err)
 	}
-	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	userEsc, err := escapeMySQLUserHost(userName)
 	if err != nil {
 		return err
 	}
-	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	hostEsc, err := escapeMySQLUserHost(host)
 	if err != nil {
 		return err
 	}

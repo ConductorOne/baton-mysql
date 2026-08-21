@@ -98,15 +98,15 @@ func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, sc
 		return err
 	}
 
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
+	userName, host, err := SplitUserHost(user)
+	if err != nil {
+		return fmt.Errorf("invalid user format, expected user@host: %w", err)
 	}
-	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	userEsc, err := escapeMySQLUserHost(userName)
 	if err != nil {
 		return err
 	}
-	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	hostEsc, err := escapeMySQLUserHost(host)
 	if err != nil {
 		return err
 	}
@@ -134,15 +134,15 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 		return err
 	}
 
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
+	userName, host, err := SplitUserHost(user)
+	if err != nil {
+		return fmt.Errorf("invalid user format, expected user@host: %w", err)
 	}
-	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	userEsc, err := escapeMySQLUserHost(userName)
 	if err != nil {
 		return err
 	}
-	hostEsc, err := escapeMySQLUserHost(userSplit[1])
+	hostEsc, err := escapeMySQLUserHost(host)
 	if err != nil {
 		return err
 	}

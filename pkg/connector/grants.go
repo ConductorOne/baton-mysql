@@ -22,19 +22,18 @@ func grantsForUserOrRole(
 	var ret []*v2.Grant
 	grantMap := make(map[string]struct{})
 
-	parts := strings.Split(strings.TrimPrefix(resource.Id.Resource, fmt.Sprintf("%s:", resource.Id.ResourceType)), "@")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("malformed principal ID")
+	idStr := strings.TrimPrefix(resource.Id.Resource, fmt.Sprintf("%s:", resource.Id.ResourceType))
+	user, hostPart, err := client.SplitUserHost(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("malformed principal ID: %w", err)
 	}
-	user := parts[0]
 
-	hosts := []string{parts[1]}
+	hosts := []string{hostPart}
 	// If we are collapsing users, we will want to split the host portion of the ID to inspect each real user's grants
 	if collapseUsers {
-		hosts = strings.Split(parts[1], ",")
+		hosts = strings.Split(hostPart, ",")
 	}
 
-	var err error
 	for _, host := range hosts {
 		err = listGlobalGrants(ctx, resource.ParentResourceId, user, host, grantMap, c)
 		if err != nil {

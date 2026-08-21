@@ -21,11 +21,23 @@ func escapeMySQLIdent(ident string) (string, error) {
 }
 
 // Helper for user/host.
-var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%\\.\\-]+$`)
+var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%\\.@\-]+$`)
 
 func escapeMySQLUserHost(ident string) (string, error) {
 	if !validUserHost.MatchString(ident) {
 		return "", fmt.Errorf("invalid user/host: %s", ident)
 	}
 	return ident, nil
+}
+
+// SplitUserHost splits a "name@host" identifier into its name and host parts.
+// Names (MySQL usernames or role names) may themselves legally contain "@",
+// but MySQL host specifications (hostnames, IPs, netmasks, or "%" wildcards)
+// never do, so splitting on the last "@" unambiguously recovers both parts.
+func SplitUserHost(s string) (string, string, error) {
+	idx := strings.LastIndex(s, "@")
+	if idx <= 0 || idx == len(s)-1 {
+		return "", "", fmt.Errorf("invalid user@host format: %s", s)
+	}
+	return s[:idx], s[idx+1:], nil
 }

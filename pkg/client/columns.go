@@ -85,11 +85,11 @@ func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceI
 
 // If the privilege is "grant", it grants SELECT, INSERT, UPDATE, and REFERENCES privileges.
 func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
+	userName, host, err := SplitUserHost(user)
+	if err != nil {
 		return fmt.Errorf("invalid user format: %s", user)
 	}
-	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+	userGrant := fmt.Sprintf("%s'@'%s", userName, host)
 
 	var privileges []string
 	if strings.ToLower(privilege) == "grant" {
@@ -120,11 +120,11 @@ func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column 
 }
 
 func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
+	userName, host, err := SplitUserHost(user)
+	if err != nil {
 		return fmt.Errorf("invalid user format: %s", user)
 	}
-	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
+	userRevoke := fmt.Sprintf("%s'@'%s", userName, host)
 
 	var privileges []string
 	if strings.ToLower(privilege) == "grant" {
