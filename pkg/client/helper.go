@@ -21,7 +21,7 @@ func escapeMySQLIdent(ident string) (string, error) {
 }
 
 // Helper for user/host.
-var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%\\.@\-]+$`)
+var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@\-]+$`)
 
 func escapeMySQLUserHost(ident string) (string, error) {
 	if !validUserHost.MatchString(ident) {

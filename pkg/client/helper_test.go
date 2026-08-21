@@ -84,6 +84,7 @@ func Test_escapeMySQLUserHost(t *testing.T) {
 		{name: "hostname", in: "%.example.com"},
 		{name: "quote injection attempt", in: "someone' OR '1'='1", wantErr: true},
 		{name: "space", in: "some one", wantErr: true},
+		{name: "trailing backslash", in: `someone\`, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -200,7 +200,7 @@ func (s *userSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (ann
 	if resourceId.ResourceType != resourceTypeUser.Id {
 		return nil, fmt.Errorf("baton-mysql: non-user resource passed to user delete")
 	}
-	userID := strings.TrimSpace(strings.Split(resourceId.Resource, ":")[1])
+	userID := strings.TrimSpace(strings.TrimPrefix(resourceId.Resource, fmt.Sprintf("%s:", resourceId.ResourceType)))
 	userPart, hostPart, err := client.SplitUserHost(userID)
 	if err != nil {
 		return nil, fmt.Errorf("baton-mysql: invalid user ID format, expected 'user@host': %w", err)

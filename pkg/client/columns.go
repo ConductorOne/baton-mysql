@@ -87,9 +87,17 @@ func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceI
 func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
 	userName, host, err := SplitUserHost(user)
 	if err != nil {
-		return fmt.Errorf("invalid user format: %s", user)
+		return fmt.Errorf("invalid user format: %s: %w", user, err)
 	}
-	userGrant := fmt.Sprintf("%s'@'%s", userName, host)
+	userEsc, err := escapeMySQLUserHost(userName)
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(host)
+	if err != nil {
+		return err
+	}
+	userGrant := fmt.Sprintf("%s'@'%s", userEsc, hostEsc)
 
 	var privileges []string
 	if strings.ToLower(privilege) == "grant" {
@@ -122,9 +130,17 @@ func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column 
 func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
 	userName, host, err := SplitUserHost(user)
 	if err != nil {
-		return fmt.Errorf("invalid user format: %s", user)
+		return fmt.Errorf("invalid user format: %s: %w", user, err)
 	}
-	userRevoke := fmt.Sprintf("%s'@'%s", userName, host)
+	userEsc, err := escapeMySQLUserHost(userName)
+	if err != nil {
+		return err
+	}
+	hostEsc, err := escapeMySQLUserHost(host)
+	if err != nil {
+		return err
+	}
+	userRevoke := fmt.Sprintf("%s'@'%s", userEsc, hostEsc)
 
 	var privileges []string
 	if strings.ToLower(privilege) == "grant" {
