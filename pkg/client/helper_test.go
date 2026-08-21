@@ -78,6 +78,7 @@ func Test_escapeMySQLUserHost(t *testing.T) {
 		in      string
 		wantErr bool
 	}{
+		{name: "empty (MySQL anonymous account username)", in: ""},
 		{name: "plain username", in: "someone"},
 		{name: "username with @", in: "someone@orion.com"},
 		{name: "wildcard host", in: "%"},

@@ -20,8 +20,11 @@ func escapeMySQLIdent(ident string) (string, error) {
 	return strings.Join(parts, "."), nil
 }
 
-// Helper for user/host.
-var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@\-]+$`)
+// Helper for user/host. Empty is allowed: every caller derives ident via
+// SplitUserHost, which guarantees the host half is always non-empty, so an
+// empty string here can only be the username of MySQL's anonymous account
+// (''@'host').
+var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@\-]*$`)
 
 func escapeMySQLUserHost(ident string) (string, error) {
 	if !validUserHost.MatchString(ident) {
