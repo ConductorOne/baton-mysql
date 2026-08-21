@@ -107,6 +107,12 @@ func (o *userSyncer) CreateAccount(
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("missing or invalid 'username' in profile")
 	}
+	// An empty username would create MySQL's anonymous account (''@'host').
+	// That is a legitimate entity to read and delete, but never something we
+	// should provision on request.
+	if username == "" {
+		return nil, nil, nil, fmt.Errorf("baton-mysql: 'username' in profile must not be empty")
+	}
 
 	host, err := o.client.GetHost(ctx)
 	if err != nil {
@@ -124,10 +130,13 @@ func (o *userSyncer) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("create user failed: %w", err)
 	}
 
-	// Build resource
+	// Build resource. UserType must be set: GetID() renders it as the
+	// "<type>:<user>@<host>" prefix, and omitting it yields ":user@host",
+	// which every consumer of the composite ID then fails to parse.
 	user := &client.User{
-		User: username,
-		Host: host,
+		UserType: client.UserType,
+		User:     username,
+		Host:     host,
 	}
 	userResource, err := parseIntoUserResource(user, nil)
 	if err != nil {

@@ -23,8 +23,11 @@ func escapeMySQLIdent(ident string) (string, error) {
 // Helper for user/host. Empty is allowed: every caller derives ident via
 // SplitUserHost, which guarantees the host half is always non-empty, so an
 // empty string here can only be the username of MySQL's anonymous account
-// (''@'host').
-var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@\-]*$`)
+// (''@'host'). ":" and "/" are allowed because MySQL host specs include IPv6
+// literals (the stock root@::1) and netmask forms (198.51.100.0/255.255.255.0);
+// both are inert inside the single-quoted '%s'@'%s' the callers build. "'" and
+// "\" stay excluded, as those are what could break out of that quoting.
+var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@:/\-]*$`)
 
 func escapeMySQLUserHost(ident string) (string, error) {
 	if !validUserHost.MatchString(ident) {

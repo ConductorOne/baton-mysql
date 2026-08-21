@@ -36,6 +36,21 @@ func Test_SplitUserHost(t *testing.T) {
 			want: want{user: "someone@orion.com", host: "localhost,%"},
 		},
 		{
+			name: "ipv6 loopback host",
+			in:   "root@::1",
+			want: want{user: "root", host: "::1"},
+		},
+		{
+			name: "username with @ and ipv6 host",
+			in:   "someone@orion.com@::1",
+			want: want{user: "someone@orion.com", host: "::1"},
+		},
+		{
+			name: "netmask host",
+			in:   "someone@198.51.100.0/255.255.255.0",
+			want: want{user: "someone", host: "198.51.100.0/255.255.255.0"},
+		},
+		{
 			name:    "no @",
 			in:      "someone",
 			wantErr: true,
@@ -83,6 +98,11 @@ func Test_escapeMySQLUserHost(t *testing.T) {
 		{name: "username with @", in: "someone@orion.com"},
 		{name: "wildcard host", in: "%"},
 		{name: "hostname", in: "%.example.com"},
+		{name: "ipv4 host", in: "127.0.0.1"},
+		{name: "ipv6 loopback host", in: "::1"},
+		{name: "ipv6 full host", in: "2001:db8::8a2e:370:7334"},
+		{name: "netmask host", in: "198.51.100.0/255.255.255.0"},
+		{name: "wildcard octet host", in: "198.51.100.%"},
 		{name: "quote injection attempt", in: "someone' OR '1'='1", wantErr: true},
 		{name: "space", in: "some one", wantErr: true},
 		{name: "trailing backslash", in: `someone\`, wantErr: true},
