@@ -41,9 +41,9 @@ func Test_SplitUserHost(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty user",
-			in:      "@%",
-			wantErr: true,
+			name: "empty user (MySQL anonymous account)",
+			in:   "@%",
+			want: want{user: "", host: "%"},
 		},
 		{
 			name:    "empty host",

@@ -36,7 +36,8 @@ func escapeMySQLUserHost(ident string) (string, error) {
 // never do, so splitting on the last "@" unambiguously recovers both parts.
 func SplitUserHost(s string) (string, string, error) {
 	idx := strings.LastIndex(s, "@")
-	if idx <= 0 || idx == len(s)-1 {
+	// An empty name is valid: MySQL's anonymous account is ''@'host'.
+	if idx < 0 || idx == len(s)-1 {
 		return "", "", fmt.Errorf("invalid user@host format: %s", s)
 	}
 	return s[:idx], s[idx+1:], nil

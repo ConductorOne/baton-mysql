@@ -8,12 +8,12 @@ import (
 func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege string) error {
 	roleName, roleHostRaw, err := SplitUserHost(role)
 	if err != nil {
-		return fmt.Errorf("invalid role format: %s", role)
+		return fmt.Errorf("invalid role format: %s: %w", role, err)
 	}
 
 	userName, userHostRaw, err := SplitUserHost(user)
 	if err != nil {
-		return fmt.Errorf("invalid user format: %s", user)
+		return fmt.Errorf("invalid user format: %s: %w", user, err)
 	}
 
 	roleUser, err := escapeMySQLUserHost(roleName)
@@ -54,12 +54,12 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege string) error {
 	roleName, roleHostRaw, err := SplitUserHost(role)
 	if err != nil {
-		return fmt.Errorf("invalid role format: %s", role)
+		return fmt.Errorf("invalid role format: %s: %w", role, err)
 	}
 
 	userName, userHostRaw, err := SplitUserHost(user)
 	if err != nil {
-		return fmt.Errorf("invalid user format: %s", user)
+		return fmt.Errorf("invalid user format: %s: %w", user, err)
 	}
 
 	roleUser, err := escapeMySQLUserHost(roleName)
