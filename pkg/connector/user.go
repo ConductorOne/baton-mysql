@@ -41,40 +41,10 @@ func (s *userSyncer) List(
 
 	var ret []*v2.Resource
 	for _, u := range users {
-		var annos annotations.Annotations
-
-		ut, err := rs.NewUserTrait(
-			rs.WithUserLogin(u.User),
-		)
+		resource, err := parseIntoUserResource(u, parentResourceID)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		annos.Update(ut)
-
-		resource := &v2.Resource{
-			DisplayName: fmt.Sprintf("%s@%s", u.User, u.Host),
-			Id: &v2.ResourceId{
-				ResourceType: s.resourceType.Id,
-				Resource:     u.GetID(),
-			},
-			Annotations:      annos,
-			ParentResourceId: parentResourceID,
-		}
-
-		err = rs.WithResourceProfile(map[string]interface{}{
-			"user":       u.User,
-			"host":       u.Host,
-			"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
-			"user_id":    fmt.Sprintf("%s@%s", u.User, u.Host),
-		})(resource)
-		if err != nil {
-			return nil, "", nil, err
-		}
-		err = rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, "")(resource)
-		if err != nil {
-			return nil, "", nil, err
-		}
-
 		ret = append(ret, resource)
 	}
 
@@ -177,41 +147,20 @@ func (o *userSyncer) CreateAccount(
 }
 
 func parseIntoUserResource(user *client.User, parent *v2.ResourceId) (*v2.Resource, error) {
-	ut, err := rs.NewUserTrait(
-		rs.WithUserLogin(user.User),
+	return rs.NewUserResource(
+		fmt.Sprintf("%s@%s", user.User, user.Host),
+		resourceTypeUser,
+		user.GetID(),
+		[]rs.UserTraitOption{rs.WithUserLogin(user.User)},
+		rs.WithParentResourceID(parent),
+		rs.WithResourceProfile(map[string]interface{}{
+			"user":       user.User,
+			"host":       user.Host,
+			"first_name": fmt.Sprintf("%s@%s", user.User, user.Host),
+			"user_id":    fmt.Sprintf("%s@%s", user.User, user.Host),
+		}),
+		rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	annos := annotations.Annotations{}
-	annos.Update(ut)
-
-	resource := &v2.Resource{
-		DisplayName: fmt.Sprintf("%s@%s", user.User, user.Host),
-		Id: &v2.ResourceId{
-			ResourceType: resourceTypeUser.Id,
-			Resource:     user.GetID(),
-		},
-		Annotations:      annos,
-		ParentResourceId: parent,
-	}
-
-	err = rs.WithResourceProfile(map[string]interface{}{
-		"user":       user.User,
-		"host":       user.Host,
-		"first_name": fmt.Sprintf("%s@%s", user.User, user.Host),
-		"user_id":    fmt.Sprintf("%s@%s", user.User, user.Host),
-	})(resource)
-	if err != nil {
-		return nil, err
-	}
-	err = rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, "")(resource)
-	if err != nil {
-		return nil, err
-	}
-
-	return resource, nil
 }
 
 func (s *userSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
