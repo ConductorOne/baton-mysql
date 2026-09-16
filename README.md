@@ -20,7 +20,7 @@ baton resources
 ## docker
 
 ```
-docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton-mysql:latest -f "/out/sync.c1z" --connection-string "baton:baton-password@tcp(127.0.0.1:3306)/"
+docker run --rm -v $(pwd):/out public.ecr.aws/conductorone/baton-mysql:latest -f "/out/sync.c1z" --connection-string "baton:baton-password@tcp(127.0.0.1:3306)/"
 docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c1z" resources
 ```
 
