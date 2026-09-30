@@ -93,13 +93,12 @@ func (s *roleSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlem
 	privilege := parts[1]
 	roleName := parts[3]
 
-	userSplit := strings.Split(principal.Id.Resource, ":")
-	if len(userSplit) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", principal.Id.Resource)
+	user, err := principalAccount(principal.Id)
+	if err != nil {
+		return nil, err
 	}
-	user := userSplit[1]
 
-	err := s.client.GrantRolePrivilege(ctx, roleName, user, privilege)
+	err = s.client.GrantRolePrivilege(ctx, roleName, user, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on role %s to user %s: %w", privilege, roleName, user, err)
 	}
@@ -115,13 +114,12 @@ func (s *roleSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.A
 	privilege := parts[1]
 	roleName := parts[3]
 
-	userSplit := strings.Split(grant.Principal.Id.Resource, ":")
-	if len(userSplit) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", grant.Principal.Id.Resource)
+	user, err := principalAccount(grant.Principal.Id)
+	if err != nil {
+		return nil, err
 	}
-	user := userSplit[1]
 
-	err := s.client.RevokeRolePrivilege(ctx, roleName, user, privilege)
+	err = s.client.RevokeRolePrivilege(ctx, roleName, user, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke %s on role %s from user %s: %w", privilege, roleName, user, err)
 	}

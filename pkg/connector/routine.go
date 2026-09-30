@@ -103,13 +103,12 @@ func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entit
 	schema := schemaRoutine[0]
 	routineName := schemaRoutine[1]
 
-	userSplit := strings.Split(principal.Id.Resource, ":")
-	if len(userSplit) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", principal.Id.Resource)
+	user, err := principalAccount(principal.Id)
+	if err != nil {
+		return nil, err
 	}
-	user := userSplit[1]
 
-	err := s.client.GrantRoutinePrivilege(ctx, privilege, schema, routineName, user)
+	err = s.client.GrantRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on %s.%s to %s: %w", privilege, schema, routineName, user, err)
 	}
@@ -147,13 +146,12 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 	schema := schemaRoutine[0]
 	routineName := schemaRoutine[1]
 
-	userSplit := strings.Split(grant.Principal.Id.Resource, ":")
-	if len(userSplit) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", grant.Principal.Id.Resource)
+	user, err := principalAccount(grant.Principal.Id)
+	if err != nil {
+		return nil, err
 	}
-	user := userSplit[1]
 
-	err := s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
+	err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
 	}

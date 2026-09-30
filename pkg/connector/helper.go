@@ -2,12 +2,22 @@ package connector
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"unicode"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/crypto"
 )
+
+// principalAccount returns the user@host part of a user or role resource ID.
+func principalAccount(id *v2.ResourceId) (string, error) {
+	account, ok := strings.CutPrefix(id.GetResource(), id.GetResourceType()+":")
+	if !ok || account == "" {
+		return "", fmt.Errorf("baton-mysql: invalid principal ID: %s", id.GetResource())
+	}
+	return account, nil
+}
 
 const symbols = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 

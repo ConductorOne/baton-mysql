@@ -79,13 +79,14 @@ func newDatabaseSyncer(c *client.Client, skipDbs map[string]struct{}) *databaseS
 }
 
 func (s *databaseSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	userResource := principal.Id.Resource
 	privilege, database := extractDatabasePrivilegeAndDb(entitlement.Id)
 
-	user := strings.Split(userResource, ":")
-	userStr := user[1]
+	userStr, err := principalAccount(principal.Id)
+	if err != nil {
+		return nil, err
+	}
 
-	err := s.client.GrantDatabasePrivilege(ctx, database, userStr, privilege)
+	err = s.client.GrantDatabasePrivilege(ctx, database, userStr, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}
@@ -94,13 +95,14 @@ func (s *databaseSyncer) Grant(ctx context.Context, principal *v2.Resource, enti
 }
 
 func (s *databaseSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	userResource := grant.Principal.Id.Resource
 	privilege, database := extractDatabasePrivilegeAndDb(grant.Entitlement.Id)
 
-	user := strings.Split(userResource, ":")
-	userStr := user[1]
+	userStr, err := principalAccount(grant.Principal.Id)
+	if err != nil {
+		return nil, err
+	}
 
-	err := s.client.RevokeDatabasePrivilege(ctx, database, userStr, privilege)
+	err = s.client.RevokeDatabasePrivilege(ctx, database, userStr, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("revoke failed: %w", err)
 	}
