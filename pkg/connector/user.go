@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -44,21 +43,14 @@ func (s *userSyncer) List(
 		var annos annotations.Annotations
 
 		ut, err := rs.NewUserTrait(
-			rs.WithUserProfile(map[string]interface{}{
-				"user":       u.User,
-				"host":       u.Host,
-				"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
-				"user_id":    fmt.Sprintf("%s@%s", u.User, u.Host),
-			}),
 			rs.WithUserLogin(u.User),
-			rs.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
 		)
 		if err != nil {
 			return nil, "", nil, err
 		}
 		annos.Update(ut)
 
-		ret = append(ret, &v2.Resource{
+		userResource := &v2.Resource{
 			DisplayName: fmt.Sprintf("%s@%s", u.User, u.Host),
 			Id: &v2.ResourceId{
 				ResourceType: s.resourceType.Id,
@@ -66,7 +58,22 @@ func (s *userSyncer) List(
 			},
 			Annotations:      annos,
 			ParentResourceId: parentResourceID,
-		})
+		}
+		err = rs.WithResourceProfile(map[string]interface{}{
+			"user":       u.User,
+			"host":       u.Host,
+			"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
+			"user_id":    fmt.Sprintf("%s@%s", u.User, u.Host),
+		})(userResource)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		err = rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, "")(userResource)
+		if err != nil {
+			return nil, "", nil, err
+		}
+
+		ret = append(ret, userResource)
 	}
 
 	return ret, nextPageToken, nil, nil
@@ -169,14 +176,7 @@ func (o *userSyncer) CreateAccount(
 
 func parseIntoUserResource(user *client.User, parent *v2.ResourceId) (*v2.Resource, error) {
 	ut, err := rs.NewUserTrait(
-		rs.WithUserProfile(map[string]interface{}{
-			"user":       user.User,
-			"host":       user.Host,
-			"first_name": fmt.Sprintf("%s@%s", user.User, user.Host),
-			"user_id":    fmt.Sprintf("%s@%s", user.User, user.Host),
-		}),
 		rs.WithUserLogin(user.User),
-		rs.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
 	)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func parseIntoUserResource(user *client.User, parent *v2.ResourceId) (*v2.Resour
 	annos := annotations.Annotations{}
 	annos.Update(ut)
 
-	return &v2.Resource{
+	userResource := &v2.Resource{
 		DisplayName: fmt.Sprintf("%s@%s", user.User, user.Host),
 		Id: &v2.ResourceId{
 			ResourceType: resourceTypeUser.Id,
@@ -193,22 +193,34 @@ func parseIntoUserResource(user *client.User, parent *v2.ResourceId) (*v2.Resour
 		},
 		Annotations:      annos,
 		ParentResourceId: parent,
-	}, nil
+	}
+	err = rs.WithResourceProfile(map[string]interface{}{
+		"user":       user.User,
+		"host":       user.Host,
+		"first_name": fmt.Sprintf("%s@%s", user.User, user.Host),
+		"user_id":    fmt.Sprintf("%s@%s", user.User, user.Host),
+	})(userResource)
+	if err != nil {
+		return nil, err
+	}
+	err = rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, "")(userResource)
+	if err != nil {
+		return nil, err
+	}
+
+	return userResource, nil
 }
 
 func (s *userSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
 	if resourceId.ResourceType != resourceTypeUser.Id {
 		return nil, fmt.Errorf("baton-mysql: non-user resource passed to user delete")
 	}
-	userID := strings.TrimSpace(strings.Split(resourceId.Resource, ":")[1])
-	parts := strings.Split(userID, "@")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("baton-mysql: invalid user ID format, expected 'user@host'")
+	account, err := principalAccount(resourceId)
+	if err != nil {
+		return nil, err
 	}
-	user, host := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 
-	userStr := fmt.Sprintf("%s@%s", user, host)
-	err := s.client.DropUser(ctx, userStr)
+	err = s.client.DropUser(ctx, account)
 	if err != nil {
 		return nil, fmt.Errorf("drop user failed: %w", err)
 	}

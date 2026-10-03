@@ -77,9 +77,12 @@ func (s *columnSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 	tableName := fmt.Sprintf("%s.%s", columnParts[0], columnParts[1])
 	columnName := columnParts[2]
 
-	user := strings.Split(principal.Id.Resource, ":")[1]
+	user, err := principalAccount(principal.Id)
+	if err != nil {
+		return nil, err
+	}
 
-	err := s.client.GrantColumnPrivilege(ctx, tableName, columnName, user, privilege)
+	err = s.client.GrantColumnPrivilege(ctx, tableName, columnName, user, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on %s to %s: %w", privilege, entitlement.Id, principal.Id.Resource, err)
 	}
@@ -102,13 +105,12 @@ func (s *columnSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	table := fmt.Sprintf("%s.%s", idParts[0], idParts[1])
 	column := idParts[2]
 
-	userParts := strings.Split(grant.Principal.Id.Resource, ":")
-	if len(userParts) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", grant.Principal.Id.Resource)
+	user, err := principalAccount(grant.Principal.Id)
+	if err != nil {
+		return nil, err
 	}
-	user := userParts[1]
 
-	err := s.client.RevokeColumnPrivilege(ctx, table, column, user, privilege)
+	err = s.client.RevokeColumnPrivilege(ctx, table, column, user, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, table, column, user, err)
 	}

@@ -88,12 +88,12 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 	privilege := parts[1]
 	tableID := parts[3]
 
-	userName := strings.Split(principal.Id.Resource, ":")
-	if len(userName) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", principal.Id.Resource)
+	user, err := principalAccount(principal.Id)
+	if err != nil {
+		return nil, err
 	}
 
-	err := s.client.GrantTablePrivilege(ctx, tableID, userName[1], privilege)
+	err = s.client.GrantTablePrivilege(ctx, tableID, user, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on %s to %s: %w", privilege, tableID, principal.Id.Resource, err)
 	}
@@ -109,12 +109,12 @@ func (s *tableSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.
 	privilege := parts[1]
 	tableID := parts[3]
 
-	userName := strings.Split(grant.Principal.Id.Resource, ":")
-	if len(userName) != 2 {
-		return nil, fmt.Errorf("invalid principal ID: %s", grant.Principal.Id.Resource)
+	user, err := principalAccount(grant.Principal.Id)
+	if err != nil {
+		return nil, err
 	}
 
-	err := s.client.RevokeTablePrivilege(ctx, tableID, userName[1], privilege)
+	err = s.client.RevokeTablePrivilege(ctx, tableID, user, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke %s on %s from %s: %w", privilege, tableID, grant.Principal.Id.Resource, err)
 	}
