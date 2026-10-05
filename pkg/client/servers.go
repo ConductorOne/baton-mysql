@@ -40,23 +40,23 @@ func (c *Client) ExecContext(ctx context.Context, query string) (sql.Result, err
 }
 
 func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string) error {
-	userGrant, err := quoteAccount(user)
+	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
 	query := fmt.Sprintf("GRANT %s ON *.* TO %s", strings.ToUpper(privilege), userGrant)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
 
 func (c *Client) RevokeServerPrivilege(ctx context.Context, user string, privilege string) error {
-	userRevoke, err := quoteAccount(user)
+	userRevoke, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
 	query := fmt.Sprintf("REVOKE %s ON *.* FROM %s", strings.ToUpper(privilege), userRevoke)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }

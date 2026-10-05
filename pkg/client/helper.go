@@ -21,11 +21,11 @@ func escapeMySQLIdent(ident string) (string, error) {
 }
 
 // Helper for user/host. Backslash is excluded because it would escape the closing quote.
-var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@\-]+$`)
+var validUserHost = regexp.MustCompile(`^[a-zA-Z0-9_%.@:/ \-]+$`)
 
 func escapeMySQLUserHost(ident string) (string, error) {
 	if !validUserHost.MatchString(ident) {
-		return "", fmt.Errorf("invalid user/host: %s", ident)
+		return "", fmt.Errorf("baton-mysql: unsupported characters in user/host %q", ident)
 	}
 	return ident, nil
 }
@@ -49,12 +49,34 @@ func SplitUserHost(account string) (string, string, error) {
 }
 
 // quoteAccount validates a user@host account name and returns it quoted as 'user'@'host'.
-// The anonymous account is rejected: it matches any user name from its host, so granting to it grants host-wide access.
 func quoteAccount(account string) (string, error) {
 	user, host, err := SplitUserHost(account)
 	if err != nil {
 		return "", err
 	}
+	return quoteUserHost(user, host)
+}
+
+// quoteAccounts is like quoteAccount but also accepts collapsed users (user@host1,host2), returning the
+// comma-separated account list that GRANT, REVOKE and DROP USER accept.
+func quoteAccounts(account string) (string, error) {
+	user, hosts, err := SplitUserHost(account)
+	if err != nil {
+		return "", err
+	}
+	var quoted []string
+	for _, host := range strings.Split(hosts, ",") {
+		q, err := quoteUserHost(user, host)
+		if err != nil {
+			return "", err
+		}
+		quoted = append(quoted, q)
+	}
+	return strings.Join(quoted, ", "), nil
+}
+
+// quoteUserHost rejects the anonymous account: it matches any user name from its host, so granting to it grants host-wide access.
+func quoteUserHost(user string, host string) (string, error) {
 	if user == "" {
 		return "", fmt.Errorf("baton-mysql: anonymous account ''@'%s' cannot be provisioned", host)
 	}

@@ -247,11 +247,11 @@ func (c *Client) CreateUser(ctx context.Context, user string, password string) e
 }
 
 func (c *Client) DropUser(ctx context.Context, user string) error {
-	userStr, err := quoteAccount(user)
+	userStr, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 	query := fmt.Sprintf("DROP USER %s", userStr)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }

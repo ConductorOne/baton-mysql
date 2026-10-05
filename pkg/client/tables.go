@@ -83,7 +83,7 @@ func (c *Client) ListTables(ctx context.Context, parentResourceID *v2.ResourceId
 }
 
 func (c *Client) GrantTablePrivilege(ctx context.Context, table string, user string, privilege string) error {
-	userGrant, err := quoteAccount(user)
+	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -94,12 +94,12 @@ func (c *Client) GrantTablePrivilege(ctx context.Context, table string, user str
 	}
 
 	query := fmt.Sprintf("GRANT %s ON %s TO %s", strings.ToUpper(privilege), escapedTable, userGrant)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
 
 func (c *Client) RevokeTablePrivilege(ctx context.Context, table string, user string, privilege string) error {
-	userRevoke, err := quoteAccount(user)
+	userRevoke, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -110,6 +110,6 @@ func (c *Client) RevokeTablePrivilege(ctx context.Context, table string, user st
 	}
 
 	query := fmt.Sprintf("REVOKE %s ON %s FROM %s", strings.ToUpper(privilege), escapedTable, userRevoke)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }

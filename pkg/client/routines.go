@@ -98,7 +98,7 @@ func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, sc
 		return err
 	}
 
-	userGrant, err := quoteAccount(user)
+	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -106,8 +106,8 @@ func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, sc
 	query := fmt.Sprintf("GRANT %s ON %s %s.%s TO %s",
 		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userGrant)
 
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
 
 func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, schema string, routineName string, user string) error {
@@ -125,15 +125,15 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 		return err
 	}
 
-	userRevoke, err := quoteAccount(user)
+	userRevoke, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
 	query := fmt.Sprintf("REVOKE %s ON %s %s.%s FROM %s",
 		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
 
 func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string) (string, error) {
