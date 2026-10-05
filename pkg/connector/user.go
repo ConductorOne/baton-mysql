@@ -40,39 +40,10 @@ func (s *userSyncer) List(
 
 	var ret []*v2.Resource
 	for _, u := range users {
-		var annos annotations.Annotations
-
-		ut, err := rs.NewUserTrait(
-			rs.WithUserLogin(u.User),
-		)
+		userResource, err := parseIntoUserResource(u, parentResourceID)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		annos.Update(ut)
-
-		userResource := &v2.Resource{
-			DisplayName: fmt.Sprintf("%s@%s", u.User, u.Host),
-			Id: &v2.ResourceId{
-				ResourceType: s.resourceType.Id,
-				Resource:     u.GetID(),
-			},
-			Annotations:      annos,
-			ParentResourceId: parentResourceID,
-		}
-		err = rs.WithResourceProfile(map[string]interface{}{
-			"user":       u.User,
-			"host":       u.Host,
-			"first_name": fmt.Sprintf("%s@%s", u.User, u.Host),
-			"user_id":    fmt.Sprintf("%s@%s", u.User, u.Host),
-		})(userResource)
-		if err != nil {
-			return nil, "", nil, err
-		}
-		err = rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, "")(userResource)
-		if err != nil {
-			return nil, "", nil, err
-		}
-
 		ret = append(ret, userResource)
 	}
 
