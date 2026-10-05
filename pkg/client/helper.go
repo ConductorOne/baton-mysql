@@ -30,6 +30,14 @@ func escapeMySQLUserHost(ident string) (string, error) {
 	return ident, nil
 }
 
+// quoteString returns s as a MySQL string literal. Backslashes are only escape characters when NO_BACKSLASH_ESCAPES is off.
+func quoteString(s string, noBackslashEscapes bool) string {
+	if !noBackslashEscapes {
+		s = strings.ReplaceAll(s, `\`, `\\`)
+	}
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 // SplitUserHost splits a user@host account name on the last '@': MySQL allows '@' in user names but rejects it in host names.
 // An empty user is accepted so the anonymous account (blank user name) can be synced; quoteAccount rejects it for provisioning.
 func SplitUserHost(account string) (string, string, error) {

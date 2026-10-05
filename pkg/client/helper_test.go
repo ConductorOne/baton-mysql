@@ -69,3 +69,26 @@ func TestQuoteAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestQuoteString(t *testing.T) {
+	tests := []struct {
+		name               string
+		input              string
+		noBackslashEscapes bool
+		want               string
+	}{
+		{name: "plain", input: "Abc123!", want: "'Abc123!'"},
+		{name: "single quote", input: "a'b", want: "'a''b'"},
+		{name: "trailing backslash", input: `ab\`, want: `'ab\\'`},
+		{name: "backslash sequence", input: `a\nb`, want: `'a\\nb'`},
+		{name: "quote and backslash", input: `x'y\z`, want: `'x''y\\z'`},
+		{name: "no backslash escapes keeps backslash", input: `ab\`, noBackslashEscapes: true, want: `'ab\'`},
+		{name: "no backslash escapes still doubles quote", input: `x'y\z`, noBackslashEscapes: true, want: `'x''y\z'`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, quoteString(tt.input, tt.noBackslashEscapes))
+		})
+	}
+}

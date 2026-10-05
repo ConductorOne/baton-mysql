@@ -223,9 +223,26 @@ func (c *Client) CreateUser(ctx context.Context, user string, password string) e
 	if err != nil {
 		return err
 	}
-	pwEsc := strings.ReplaceAll(password, "'", "''")
-	query := fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s'", userStr, pwEsc)
-	_ = c.db.MustExec(query)
+
+	// The sql_mode is read on the same connection that runs CREATE USER, since it decides how the password literal is parsed.
+	conn, err := c.db.Connx(ctx)
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to get connection: %w", err)
+	}
+	defer conn.Close()
+
+	var sqlMode string
+	err = conn.GetContext(ctx, &sqlMode, "SELECT @@SESSION.sql_mode")
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to read sql_mode: %w", err)
+	}
+	noBackslashEscapes := strings.Contains(sqlMode, "NO_BACKSLASH_ESCAPES")
+
+	query := fmt.Sprintf("CREATE USER %s IDENTIFIED BY %s", userStr, quoteString(password, noBackslashEscapes))
+	_, err = conn.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to create user %s: %w", user, err)
+	}
 	return nil
 }
 
