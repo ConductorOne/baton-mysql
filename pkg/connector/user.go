@@ -107,9 +107,9 @@ func (o *userSyncer) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("missing or invalid 'username' in profile")
 	}
 
-	host, err := o.client.GetHost(ctx)
+	server, err := o.client.GetServerInfo(ctx)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get host: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get server info: %w", err)
 	}
 
 	generatedPassword, err := generateCredentials(credentialOptions)
@@ -117,18 +117,22 @@ func (o *userSyncer) CreateAccount(
 		return nil, nil, nil, err
 	}
 
-	userStr := fmt.Sprintf("%s@%s", username, host)
+	userStr := fmt.Sprintf("%s@%s", username, server.Name)
 	err = o.client.CreateUser(ctx, userStr, generatedPassword)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create user failed: %w", err)
 	}
 
-	// Build resource
 	user := &client.User{
-		User: username,
-		Host: host,
+		UserType: client.UserType,
+		User:     username,
+		Host:     server.Name,
 	}
-	userResource, err := parseIntoUserResource(user, nil)
+	parent := &v2.ResourceId{
+		ResourceType: resourceTypeServer.Id,
+		Resource:     server.ID,
+	}
+	userResource, err := parseIntoUserResource(user, parent)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to build resource: %w", err)
 	}

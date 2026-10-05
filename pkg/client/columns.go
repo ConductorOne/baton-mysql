@@ -85,7 +85,7 @@ func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceI
 
 // If the privilege is "grant", it grants SELECT, INSERT, UPDATE, and REFERENCES privileges.
 func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
-	userGrant, err := quoteAccount(user)
+	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -114,12 +114,12 @@ func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column 
 
 	query := fmt.Sprintf("GRANT %s ON %s TO %s", privilegesSQL, escapedTable, userGrant)
 
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
 
 func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
-	userRevoke, err := quoteAccount(user)
+	userRevoke, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -148,6 +148,6 @@ func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column
 
 	query := fmt.Sprintf("REVOKE %s ON %s FROM %s", privilegesSQL, escapedTable, userRevoke)
 
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }

@@ -10,7 +10,7 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 	if err != nil {
 		return fmt.Errorf("invalid role %s: %w", role, err)
 	}
-	userAccount, err := quoteAccount(user)
+	userAccount, err := quoteAccounts(user)
 	if err != nil {
 		return fmt.Errorf("invalid user %s: %w", user, err)
 	}
@@ -29,8 +29,8 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 		return fmt.Errorf("unknown privilege: %s", privilege)
 	}
 
-	_ = c.db.MustExec(grantStmt)
-	return nil
+	_, err = c.db.ExecContext(ctx, grantStmt)
+	return err
 }
 
 func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege string) error {
@@ -38,7 +38,7 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 	if err != nil {
 		return fmt.Errorf("invalid role %s: %w", role, err)
 	}
-	userAccount, err := quoteAccount(user)
+	userAccount, err := quoteAccounts(user)
 	if err != nil {
 		return fmt.Errorf("invalid user %s: %w", user, err)
 	}
@@ -53,6 +53,6 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		return fmt.Errorf("unknown privilege: %s", privilege)
 	}
 
-	_ = c.db.MustExec(revokeStmt)
-	return nil
+	_, err = c.db.ExecContext(ctx, revokeStmt)
+	return err
 }

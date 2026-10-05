@@ -74,7 +74,7 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 }
 
 func (c *Client) GrantDatabasePrivilege(ctx context.Context, database string, user string, privilege string) error {
-	userGrant, err := quoteAccount(user)
+	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -85,12 +85,12 @@ func (c *Client) GrantDatabasePrivilege(ctx context.Context, database string, us
 	}
 
 	query := fmt.Sprintf("GRANT %s ON %s.* TO %s", strings.ToUpper(privilege), escapedDB, userGrant)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
 
 func (c *Client) RevokeDatabasePrivilege(ctx context.Context, database string, user string, privilege string) error {
-	userRevoke, err := quoteAccount(user)
+	userRevoke, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
@@ -101,6 +101,6 @@ func (c *Client) RevokeDatabasePrivilege(ctx context.Context, database string, u
 	}
 
 	query := fmt.Sprintf("REVOKE %s ON %s.* FROM %s", strings.ToUpper(privilege), escapedDB, userRevoke)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }

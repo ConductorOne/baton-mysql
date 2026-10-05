@@ -218,32 +218,40 @@ func (c *Client) ListUsers(ctx context.Context, userType string, pager *Pager, c
 	return ret, nextPageToken, nil
 }
 
-func (c *Client) GetHost(ctx context.Context) (string, error) {
-	var host string
-	err := c.db.QueryRowxContext(ctx, "SELECT @@hostname").Scan(&host)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch server info: %w", err)
-	}
-	return host, nil
-}
-
 func (c *Client) CreateUser(ctx context.Context, user string, password string) error {
 	userStr, err := quoteAccount(user)
 	if err != nil {
 		return err
 	}
-	pwEsc := strings.ReplaceAll(password, "'", "''")
-	query := fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s'", userStr, pwEsc)
-	_ = c.db.MustExec(query)
+
+	// The sql_mode is read on the same connection that runs CREATE USER, since it decides how the password literal is parsed.
+	conn, err := c.db.Connx(ctx)
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to get connection: %w", err)
+	}
+	defer conn.Close()
+
+	var sqlMode string
+	err = conn.GetContext(ctx, &sqlMode, "SELECT @@SESSION.sql_mode")
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to read sql_mode: %w", err)
+	}
+	noBackslashEscapes := strings.Contains(sqlMode, "NO_BACKSLASH_ESCAPES")
+
+	query := fmt.Sprintf("CREATE USER %s IDENTIFIED BY %s", userStr, quoteString(password, noBackslashEscapes))
+	_, err = conn.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to create user %s: %w", user, err)
+	}
 	return nil
 }
 
 func (c *Client) DropUser(ctx context.Context, user string) error {
-	userStr, err := quoteAccount(user)
+	userStr, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 	query := fmt.Sprintf("DROP USER %s", userStr)
-	_ = c.db.MustExec(query)
-	return nil
+	_, err = c.db.ExecContext(ctx, query)
+	return err
 }
