@@ -74,19 +74,10 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 }
 
 func (c *Client) GrantDatabasePrivilege(ctx context.Context, database string, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
-	}
-	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	userGrant, err := quoteAccount(user)
 	if err != nil {
 		return err
 	}
-	hostEsc, err := escapeMySQLUserHost(userSplit[1])
-	if err != nil {
-		return err
-	}
-	userGrant := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
 
 	escapedDB, err := escapeMySQLIdent(database)
 	if err != nil {
@@ -99,19 +90,10 @@ func (c *Client) GrantDatabasePrivilege(ctx context.Context, database string, us
 }
 
 func (c *Client) RevokeDatabasePrivilege(ctx context.Context, database string, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format, expected user@host")
-	}
-	userEsc, err := escapeMySQLUserHost(userSplit[0])
+	userRevoke, err := quoteAccount(user)
 	if err != nil {
 		return err
 	}
-	hostEsc, err := escapeMySQLUserHost(userSplit[1])
-	if err != nil {
-		return err
-	}
-	userRevoke := fmt.Sprintf("'%s'@'%s'", userEsc, hostEsc)
 
 	escapedDB, err := escapeMySQLIdent(database)
 	if err != nil {

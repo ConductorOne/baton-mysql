@@ -85,11 +85,10 @@ func (c *Client) ListColumns(ctx context.Context, parentResourceID *v2.ResourceI
 
 // If the privilege is "grant", it grants SELECT, INSERT, UPDATE, and REFERENCES privileges.
 func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format: %s", user)
+	userGrant, err := quoteAccount(user)
+	if err != nil {
+		return err
 	}
-	userGrant := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
 
 	var privileges []string
 	if strings.ToLower(privilege) == "grant" {
@@ -113,18 +112,17 @@ func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column 
 	}
 	privilegesSQL := strings.Join(privilegeClauses, ", ")
 
-	query := fmt.Sprintf("GRANT %s ON %s TO '%s'", privilegesSQL, escapedTable, userGrant)
+	query := fmt.Sprintf("GRANT %s ON %s TO %s", privilegesSQL, escapedTable, userGrant)
 
 	_ = c.db.MustExec(query)
 	return nil
 }
 
 func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column string, user string, privilege string) error {
-	userSplit := strings.Split(user, "@")
-	if len(userSplit) != 2 {
-		return fmt.Errorf("invalid user format: %s", user)
+	userRevoke, err := quoteAccount(user)
+	if err != nil {
+		return err
 	}
-	userRevoke := fmt.Sprintf("%s'@'%s", userSplit[0], userSplit[1])
 
 	var privileges []string
 	if strings.ToLower(privilege) == "grant" {
@@ -148,7 +146,7 @@ func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column
 	}
 	privilegesSQL := strings.Join(privilegeClauses, ", ")
 
-	query := fmt.Sprintf("REVOKE %s ON %s FROM '%s'", privilegesSQL, escapedTable, userRevoke)
+	query := fmt.Sprintf("REVOKE %s ON %s FROM %s", privilegesSQL, escapedTable, userRevoke)
 
 	_ = c.db.MustExec(query)
 	return nil

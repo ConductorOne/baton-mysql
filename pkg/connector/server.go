@@ -71,12 +71,14 @@ func newServerSyncer(c *client.Client) *serverSyncer {
 }
 
 func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	userResource := principal.Id.Resource
 	privilege := extractServerPrivilege(entitlement.Id)
 
-	user := strings.Split(userResource, ":")
-	userStr := user[1]
-	err := s.client.GrantServerPrivilege(ctx, userStr, privilege)
+	userStr, err := principalAccount(principal.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.client.GrantServerPrivilege(ctx, userStr, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}
@@ -85,12 +87,14 @@ func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 }
 
 func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	userResource := grant.Principal.Id.Resource
 	privilege := extractServerPrivilege(grant.Entitlement.Id)
 
-	user := strings.Split(userResource, ":")
-	userStr := user[1]
-	err := s.client.RevokeServerPrivilege(ctx, userStr, privilege)
+	userStr, err := principalAccount(grant.Principal.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.client.RevokeServerPrivilege(ctx, userStr, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("revoke failed: %w", err)
 	}
