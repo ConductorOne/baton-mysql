@@ -218,15 +218,6 @@ func (c *Client) ListUsers(ctx context.Context, userType string, pager *Pager, c
 	return ret, nextPageToken, nil
 }
 
-func (c *Client) GetHost(ctx context.Context) (string, error) {
-	var host string
-	err := c.db.QueryRowxContext(ctx, "SELECT @@hostname").Scan(&host)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch server info: %w", err)
-	}
-	return host, nil
-}
-
 func (c *Client) CreateUser(ctx context.Context, user string, password string) error {
 	userStr, err := quoteAccount(user)
 	if err != nil {
