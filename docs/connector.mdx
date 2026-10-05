@@ -27,6 +27,9 @@ The MySQL connector syncs the following resources:
 
 - Roles are synced and their privilege assignments can be granted and revoked on **MySQL 8+** only. The role resource type is enabled automatically when a MySQL 8 server is detected.
 - Columns are synced as sub-resources of tables when the `--expand-columns` flag is configured.
+- Provisioning supports user and host names made of letters, digits, spaces, and the characters `_ % . @ : / -`. The connector syncs accounts whose user or host contains any other character, such as a quote or a backslash, but rejects provisioning requests for them with `baton-mysql: unsupported characters in user/host`.
+- The connector syncs the anonymous account (an empty user name) but rejects provisioning requests for it, because a grant to it applies to every user connecting from its host. The error is `baton-mysql: anonymous account ''@'<host>' cannot be provisioned`.
+- When ConductorOne creates a MySQL user, the connector generates a random password and returns it to ConductorOne. The connector escapes the password according to the server's `sql_mode`, so the password works whether or not `NO_BACKSLASH_ESCAPES` is set.
 
 ## Gather MySQL credentials
 
@@ -51,7 +54,7 @@ The MySQL connector syncs the following resources:
     ```
   </Step>
   <Step>
-    Grant the minimum required privileges. Choose the block that matches your MySQL version.
+    Grant read access to the privilege tables the connector syncs from. Choose the block that matches your MySQL version.
 
     **MySQL 5.7:**
 
@@ -93,11 +96,30 @@ The MySQL connector syncs the following resources:
     ```
   </Step>
   <Step>
-    Grant `SELECT` on all databases so the connector can introspect schemas:
+    Grant `SELECT` on all databases. This grant is required: the connector uses it to list databases and introspect their schemas, and it covers `mysql.proxies_priv`, which the column grants above do not include. The connector does not read the data in your tables.
 
     ```sql
     GRANT SELECT ON *.* TO conductorone;
     ```
+  </Step>
+  <Step>
+    If you want ConductorOne to provision access, grant the connector user the privileges it needs to make changes. Skip this step for a read-only connector.
+
+    - `CREATE USER` lets the connector create and delete MySQL users.
+    - To grant or revoke a privilege, the connector user must hold that same privilege `WITH GRANT OPTION` at the same scope (server, database, table, or routine). For example, to let the connector create users and grant `SELECT` and `INSERT` on any database:
+
+      ```sql
+      GRANT CREATE USER ON *.* TO conductorone;
+      GRANT SELECT, INSERT ON *.* TO conductorone WITH GRANT OPTION;
+      ```
+
+    - On MySQL 8+, `ROLE_ADMIN` lets the connector grant and revoke role memberships:
+
+      ```sql
+      GRANT ROLE_ADMIN ON *.* TO conductorone;
+      ```
+
+    Without these privileges, provisioning requests fail with MySQL error 1044 (access denied) for grants and error 1227 (`CREATE USER` privilege required) for account creation.
   </Step>
   <Step>
     Note the connection string in DSN format — you will need it when configuring the connector:
@@ -171,6 +193,12 @@ The supported environment variables are:
 - **BATON_COLLAPSE_USERS**: When `true`, combines `user@host` pairs that share the same username into a single identity.
 
 {/* AUTO-GENERATED:END - config-params */}
+
+To let ConductorOne provision access with this connector, add the following line to the secret's `stringData`. Without it, the connector syncs but rejects grant, revoke, account creation, and account deletion requests.
+
+```yaml
+  BATON_PROVISIONING: "true"
+```
 
 ```yaml
 apiVersion: apps/v1
