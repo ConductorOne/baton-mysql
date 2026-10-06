@@ -58,7 +58,7 @@ By default, the connector will introspect all databases that it has access to re
 1. Create a new user for the connector to connect to MySQL as. Be sure to create and save the secure password for this user:
 
 ```mysql
-CREATE USER baton IDENTIFIED BY 'secure-password';
+CREATE USER conductorone IDENTIFIED BY 'secure-password';
 ```
 
 2. Grant your new role the privileges required by the connector for inspecting privileges.
@@ -101,8 +101,26 @@ GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysq
 3. Grant your new user SELECT on each of the databases that you would like the connector to scan. In all likelihood, you will want this to be all databases. The connector does not look at any data within the databases, but `SELECT` is required in order to introspect the various schemas.
 
 ```mysql
-GRANT SELECT ON *.* TO baton;
+GRANT SELECT ON *.* TO conductorone;
 ```
+
+# Provisioning
+
+With `--provisioning` (or `BATON_PROVISIONING=true`), `baton-mysql` can:
+
+- Grant and revoke privileges on servers, databases, tables, columns (with `--expand-columns`) and routines, and role memberships and proxy access on MySQL 8+.
+- Create and delete users. The connector generates a random password for each new user and escapes it according to the server's `sql_mode`.
+
+Provisioning needs write privileges on top of the read access above: `CREATE USER` to create and delete users, each privilege to be granted held `WITH GRANT OPTION` at the same scope, `ROLE_ADMIN` for role memberships on MySQL 8+, and `PROXY ... WITH GRANT OPTION` on a role's account for proxy access to it. Scope the `WITH GRANT OPTION` grants to the databases ConductorOne manages; the example uses `mydb`.
+
+```mysql
+GRANT CREATE USER ON *.* TO conductorone;
+GRANT SELECT, INSERT ON mydb.* TO conductorone WITH GRANT OPTION;
+GRANT ROLE_ADMIN ON *.* TO conductorone;
+GRANT PROXY ON 'app_role'@'%' TO conductorone WITH GRANT OPTION;
+```
+
+The connector syncs, but does not provision, accounts whose user or host contains a character other than letters, digits, spaces and `_ % . @ : / -`, and the anonymous account (empty user name).
 
 # Contributing, Support and Issues
 
