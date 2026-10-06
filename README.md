@@ -108,15 +108,16 @@ GRANT SELECT ON *.* TO conductorone;
 
 With `--provisioning` (or `BATON_PROVISIONING=true`), `baton-mysql` can:
 
-- Grant and revoke privileges on servers, databases, tables and routines, and role memberships on MySQL 8+.
+- Grant and revoke privileges on servers, databases, tables, columns (with `--expand-columns`) and routines, and role memberships and proxy access on MySQL 8+.
 - Create and delete users. The connector generates a random password for each new user and escapes it according to the server's `sql_mode`.
 
-Provisioning needs write privileges on top of the read access above: `CREATE USER` to create and delete users, each privilege to be granted held `WITH GRANT OPTION` at the same scope, and `ROLE_ADMIN` for role memberships on MySQL 8+.
+Provisioning needs write privileges on top of the read access above: `CREATE USER` to create and delete users, each privilege to be granted held `WITH GRANT OPTION` at the same scope, `ROLE_ADMIN` for role memberships on MySQL 8+, and `PROXY ... WITH GRANT OPTION` on a role's account for proxy access to it. Scope the `WITH GRANT OPTION` grants to the databases ConductorOne manages; the example uses `mydb`.
 
 ```mysql
 GRANT CREATE USER ON *.* TO conductorone;
-GRANT SELECT, INSERT ON *.* TO conductorone WITH GRANT OPTION;
+GRANT SELECT, INSERT ON mydb.* TO conductorone WITH GRANT OPTION;
 GRANT ROLE_ADMIN ON *.* TO conductorone;
+GRANT PROXY ON 'app_role'@'%' TO conductorone WITH GRANT OPTION;
 ```
 
 The connector syncs, but does not provision, accounts whose user or host contains a character other than letters, digits, spaces and `_ % . @ : / -`, and the anonymous account (empty user name).

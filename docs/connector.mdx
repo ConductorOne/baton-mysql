@@ -106,17 +106,23 @@ The MySQL connector syncs the following resources:
     If you want ConductorOne to provision access, grant the connector user the privileges it needs to make changes. Skip this step for a read-only connector.
 
     - `CREATE USER` lets the connector create and delete MySQL users.
-    - To grant or revoke a privilege, the connector user must hold that same privilege `WITH GRANT OPTION` at the same scope (server, database, table, or routine). For example, to let the connector create users and grant `SELECT` and `INSERT` on any database:
+    - To grant or revoke a privilege, the connector user must hold that same privilege `WITH GRANT OPTION` at the same scope (server, database, table, column, or routine). Scope these grants to the databases ConductorOne manages. For example, to let the connector create users and grant `SELECT` and `INSERT` on the `mydb` database:
 
       ```sql
       GRANT CREATE USER ON *.* TO conductorone;
-      GRANT SELECT, INSERT ON *.* TO conductorone WITH GRANT OPTION;
+      GRANT SELECT, INSERT ON mydb.* TO conductorone WITH GRANT OPTION;
       ```
 
     - On MySQL 8+, `ROLE_ADMIN` lets the connector grant and revoke role memberships:
 
       ```sql
       GRANT ROLE_ADMIN ON *.* TO conductorone;
+      ```
+
+    - To grant or revoke proxy access to a role, the connector user must hold `PROXY ... WITH GRANT OPTION` on that role's account. `ROLE_ADMIN` does not cover proxy grants. For example, for a role `app_role`:
+
+      ```sql
+      GRANT PROXY ON 'app_role'@'%' TO conductorone WITH GRANT OPTION;
       ```
 
     Without these privileges, provisioning requests fail with MySQL error 1044 (access denied) for grants and error 1227 (`CREATE USER` privilege required) for account creation.
