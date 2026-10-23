@@ -71,14 +71,17 @@ func newServerSyncer(c *client.Client) *serverSyncer {
 }
 
 func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	privilege := extractServerPrivilege(entitlement.Id)
+	keyword, withGrant, err := serverPrivilege(entitlement.Id)
+	if err != nil {
+		return nil, err
+	}
 
 	userStr, err := principalAccount(principal.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.client.GrantServerPrivilege(ctx, userStr, privilege)
+	err = s.client.GrantServerPrivilege(ctx, userStr, keyword, withGrant)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}
@@ -87,14 +90,17 @@ func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 }
 
 func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	privilege := extractServerPrivilege(grant.Entitlement.Id)
+	keyword, _, err := serverPrivilege(grant.Entitlement.Id)
+	if err != nil {
+		return nil, err
+	}
 
 	userStr, err := principalAccount(grant.Principal.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.client.RevokeServerPrivilege(ctx, userStr, privilege)
+	err = s.client.RevokeServerPrivilege(ctx, userStr, keyword)
 	if err != nil {
 		return nil, fmt.Errorf("revoke failed: %w", err)
 	}
@@ -102,17 +108,66 @@ func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	return nil, nil
 }
 
-func extractServerPrivilege(entitlementID string) string {
-	parts := strings.Split(entitlementID, ":")
-	if len(parts) < 3 {
-		return ""
-	}
+// staticServerPrivileges maps the catalog keys for MySQL 8 multi-word static
+// privileges to the space-separated keyword MySQL accepts. Single-word static
+// privileges and dynamic privileges (e.g. backup_admin -> BACKUP_ADMIN) fall
+// through to strings.ToUpper.
+var staticServerPrivileges = map[string]string{
+	"alter_routine":           "ALTER ROUTINE",
+	"create_role":             "CREATE ROLE",
+	"create_routine":          "CREATE ROUTINE",
+	"create_tablespace":       "CREATE TABLESPACE",
+	"create_temporary_tables": "CREATE TEMPORARY TABLES",
+	"create_user":             "CREATE USER",
+	"create_view":             "CREATE VIEW",
+	"drop_role":               "DROP ROLE",
+	"grant":                   "GRANT OPTION",
+	"lock_tables":             "LOCK TABLES",
+	"replication_client":      "REPLICATION CLIENT",
+	"replication_slave":       "REPLICATION SLAVE",
+	"show_databases":          "SHOW DATABASES",
+	"show_view":               "SHOW VIEW",
+}
 
-	privilegePart := parts[1]
-	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_WITH_GRANT", ""))
+// reservedServerKeys are catalog keys that reach server scope but are not
+// privilege keywords. They keep their pre-fix emission byte-for-byte.
+var reservedServerKeys = map[string]struct{}{
+	"proxy":            {},
+	"proxy_with_grant": {},
+}
 
-	if strings.Contains(privilegePart, "_with_grant") {
+// legacyServerPrivilege reproduces the pre-fix server-scope spelling for the
+// reserved keys.
+func legacyServerPrivilege(key string) string {
+	priv := strings.ToUpper(strings.ReplaceAll(key, "_WITH_GRANT", ""))
+	if strings.Contains(key, "_with_grant") {
 		return priv + " WITH GRANT OPTION"
 	}
 	return priv
+}
+
+// serverPrivilege translates a server-scope entitlement ID into the privilege
+// keyword MySQL expects and whether the statement must append WITH GRANT OPTION.
+func serverPrivilege(entitlementID string) (string, bool, error) {
+	parts := strings.SplitN(entitlementID, ":", 3)
+	if len(parts) != 3 || parts[1] == "" {
+		return "", false, fmt.Errorf("baton-mysql: invalid entitlement ID: %s", entitlementID)
+	}
+
+	key := parts[1]
+	if _, ok := reservedServerKeys[key]; ok {
+		return legacyServerPrivilege(key), false, nil
+	}
+
+	withGrant := false
+	if strings.HasSuffix(key, "_with_grant") {
+		withGrant = true
+		key = strings.TrimSuffix(key, "_with_grant")
+	}
+
+	if kw, ok := staticServerPrivileges[key]; ok {
+		return kw, withGrant, nil
+	}
+
+	return strings.ToUpper(key), withGrant, nil
 }
