@@ -9,6 +9,8 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type serverSyncer struct {
@@ -108,10 +110,12 @@ func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	return nil, nil
 }
 
-// staticServerPrivileges maps the catalog keys for MySQL 8 multi-word static
-// privileges to the space-separated keyword MySQL accepts. Single-word static
-// privileges and dynamic privileges (e.g. backup_admin -> BACKUP_ADMIN) fall
-// through to strings.ToUpper.
+// staticServerPrivileges maps the catalog keys whose MySQL keyword differs
+// from the blanket strings.ToUpper: MySQL 8 multi-word static privileges, which
+// are space-separated, and the dynamic privilege nbd_stored_user, whose MySQL
+// acronym is NDB_STORED_USER. Every other key (single-word static privileges
+// and the remaining dynamic privileges, e.g. backup_admin -> BACKUP_ADMIN)
+// falls through to strings.ToUpper.
 var staticServerPrivileges = map[string]string{
 	"alter_routine":           "ALTER ROUTINE",
 	"create_role":             "CREATE ROLE",
@@ -123,6 +127,7 @@ var staticServerPrivileges = map[string]string{
 	"drop_role":               "DROP ROLE",
 	"grant":                   "GRANT OPTION",
 	"lock_tables":             "LOCK TABLES",
+	"nbd_stored_user":         "NDB_STORED_USER",
 	"replication_client":      "REPLICATION CLIENT",
 	"replication_slave":       "REPLICATION SLAVE",
 	"show_databases":          "SHOW DATABASES",
@@ -151,7 +156,7 @@ func legacyServerPrivilege(key string) string {
 func serverPrivilege(entitlementID string) (string, bool, error) {
 	parts := strings.SplitN(entitlementID, ":", 3)
 	if len(parts) != 3 || parts[1] == "" {
-		return "", false, fmt.Errorf("baton-mysql: invalid entitlement ID: %s", entitlementID)
+		return "", false, status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", entitlementID)
 	}
 
 	key := parts[1]

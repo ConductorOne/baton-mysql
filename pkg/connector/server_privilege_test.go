@@ -35,7 +35,7 @@ func TestServerPrivilege(t *testing.T) {
 
 	expected := make(map[string]want)
 
-	// Reserved keys: byte-identical pre-fix emission (I6).
+	// Reserved keys: byte-identical pre-fix emission.
 	expected["proxy"] = want{"PROXY", false}
 	expected["proxy_with_grant"] = want{"PROXY_WITH_GRANT WITH GRANT OPTION", false}
 
@@ -78,7 +78,7 @@ func TestServerPrivilege(t *testing.T) {
 		"encryption_key_admin", "firewall_admin", "firewall_exempt",
 		"firewall_user", "flush_optimizer_costs", "flush_status", "flush_tables",
 		"flush_user_resources", "group_replication_admin", "group_replication_stream",
-		"innodb_redo_log_enable", "innodb_redo_log_archive", "nbd_stored_user",
+		"innodb_redo_log_enable", "innodb_redo_log_archive",
 		"passwordless_user_admin", "persist_ro_variables_admin", "replication_applier",
 		"replication_slave_admin", "resource_group_admin", "resource_group_user",
 		"role_admin", "sensitive_variables_observer", "service_connection_admin",
@@ -89,6 +89,12 @@ func TestServerPrivilege(t *testing.T) {
 		expected[key] = want{strings.ToUpper(key), false}
 		expected[key+"_with_grant"] = want{strings.ToUpper(key), true}
 	}
+
+	// nbd_stored_user is a dynamic privilege whose MySQL acronym is
+	// NDB_STORED_USER, not the ToUpper of the catalog key. Both variants are
+	// pinned explicitly so a regression back to NBD_STORED_USER fails here.
+	expected["nbd_stored_user"] = want{"NDB_STORED_USER", false}
+	expected["nbd_stored_user_with_grant"] = want{"NDB_STORED_USER", true}
 
 	liveIDs := make([]string, 0, len(entitlementsByResourceType[resourceTypeServer.Id]))
 	for _, tmpl := range entitlementsByResourceType[resourceTypeServer.Id] {

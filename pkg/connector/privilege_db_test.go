@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/go-sql-driver/mysql"
@@ -18,12 +19,12 @@ import (
 // every provisionable scope executes cleanly through the real client.
 //
 // The test is gated on BATON_CONNECTION_STRING (not an unconditional skip) and
-// fails loudly if the DSN is set but unreachable. It skips in CI: no CI go-test
-// job sets the DSN (see todo I12), so AC4/AC5 evidence is a local mysql:8 run.
+// fails loudly if the DSN is set but unreachable. It skips in CI (no CI go-test
+// job sets the DSN), so this evidence is a local mysql:8 run.
 //
-// D4 exclusion (I6): the reserved server-scope keys proxy and proxy_with_grant
-// are deliberately not swept, because their emission stays byte-identical to
-// pre-fix and is not a valid GRANT <keyword> ON *.* form.
+// The reserved server-scope keys proxy and proxy_with_grant are deliberately
+// not swept, because their emission stays byte-identical to pre-fix and is not
+// a valid GRANT <keyword> ON *.* form.
 func TestPrivilegeSpellingAgainstMySQL(t *testing.T) {
 	dsn := os.Getenv("BATON_CONNECTION_STRING")
 	if dsn == "" {
@@ -85,10 +86,27 @@ func TestPrivilegeSpellingAgainstMySQL(t *testing.T) {
 		t.Fatalf("privilege %q (keyword %q) failed: %v %s", key, keyword, err, num)
 	}
 
+	// pluginDependentServerPrivileges are dynamic privileges MySQL registers only
+	// when the matching plugin or component is loaded (Enterprise Firewall, audit
+	// log, version tokens, NDB cluster). A stock mysql:8 rejects them as unknown,
+	// so the sweep skips them: it verifies keyword spelling, not plugin presence.
+	pluginDependentServerPrivileges := map[string]struct{}{
+		"audit_abort_exempt":  {},
+		"audit_admin":         {},
+		"firewall_admin":      {},
+		"firewall_exempt":     {},
+		"firewall_user":       {},
+		"nbd_stored_user":     {},
+		"version_token_admin": {},
+	}
+
 	// server scope
 	for _, tmpl := range entitlementsByResourceType[resourceTypeServer.Id] {
 		if tmpl.ID == "proxy" || tmpl.ID == "proxy_with_grant" {
-			continue // D4/I6 exclusion
+			continue // reserved key; not a valid GRANT <keyword> ON *.* form
+		}
+		if _, skip := pluginDependentServerPrivileges[strings.TrimSuffix(tmpl.ID, "_with_grant")]; skip {
+			continue // privilege exists only once its plugin/component is loaded
 		}
 		keyword, withGrant, err := serverPrivilege("entitlement:" + tmpl.ID + ":server:x")
 		require.NoError(t, err)
