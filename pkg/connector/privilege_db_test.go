@@ -100,13 +100,25 @@ func TestPrivilegeSpellingAgainstMySQL(t *testing.T) {
 		"version_token_admin": {},
 	}
 
+	// versionDependentServerPrivileges are dynamic privileges a later MySQL 8.x
+	// release removed but the catalog still emits for 8.0. SET_USER_ID was
+	// removed in 8.2.0, so a stock mysql:8 (currently 8.4) rejects it as
+	// unknown; the sweep skips it to verify keyword spelling, not server version.
+	versionDependentServerPrivileges := map[string]struct{}{
+		"set_user_id": {},
+	}
+
 	// server scope
 	for _, tmpl := range entitlementsByResourceType[resourceTypeServer.Id] {
 		if tmpl.ID == "proxy" || tmpl.ID == "proxy_with_grant" {
 			continue // reserved key; not a valid GRANT <keyword> ON *.* form
 		}
-		if _, skip := pluginDependentServerPrivileges[strings.TrimSuffix(tmpl.ID, "_with_grant")]; skip {
+		key := strings.TrimSuffix(tmpl.ID, "_with_grant")
+		if _, skip := pluginDependentServerPrivileges[key]; skip {
 			continue // privilege exists only once its plugin/component is loaded
+		}
+		if _, skip := versionDependentServerPrivileges[key]; skip {
+			continue // privilege removed in a later MySQL 8.x release
 		}
 		keyword, withGrant, err := serverPrivilege("entitlement:" + tmpl.ID + ":server:x")
 		require.NoError(t, err)
