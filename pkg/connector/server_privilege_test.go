@@ -39,8 +39,25 @@ func TestServerPrivilege(t *testing.T) {
 	expected["proxy"] = want{"PROXY", false}
 	expected["proxy_with_grant"] = want{"PROXY_WITH_GRANT WITH GRANT OPTION", false}
 
-	// Multi-word static privileges, space-separated.
-	for key, keyword := range staticServerPrivileges {
+	// Multi-word static privileges, space-separated. Pinned as literals (not
+	// read from staticServerPrivileges) so a spelling regression in the
+	// implementation map fails here instead of passing by construction.
+	for key, keyword := range map[string]string{
+		"alter_routine":           "ALTER ROUTINE",
+		"create_role":             "CREATE ROLE",
+		"create_routine":          "CREATE ROUTINE",
+		"create_tablespace":       "CREATE TABLESPACE",
+		"create_temporary_tables": "CREATE TEMPORARY TABLES",
+		"create_user":             "CREATE USER",
+		"create_view":             "CREATE VIEW",
+		"drop_role":               "DROP ROLE",
+		"grant":                   "GRANT OPTION",
+		"lock_tables":             "LOCK TABLES",
+		"replication_client":      "REPLICATION CLIENT",
+		"replication_slave":       "REPLICATION SLAVE",
+		"show_databases":          "SHOW DATABASES",
+		"show_view":               "SHOW VIEW",
+	} {
 		expected[key] = want{keyword, false}
 	}
 
