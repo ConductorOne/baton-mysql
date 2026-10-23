@@ -88,22 +88,26 @@ func TestPrivilegeSpellingAgainstMySQL(t *testing.T) {
 
 	// pluginDependentServerPrivileges are dynamic privileges MySQL registers only
 	// when the matching plugin or component is loaded (Enterprise Firewall, audit
-	// log, version tokens, NDB cluster). A stock mysql:8 rejects them as unknown,
-	// so the sweep skips them: it verifies keyword spelling, not plugin presence.
+	// log, query rewrite, version tokens, NDB cluster). A stock mysql:8 rejects
+	// them as unknown, so the sweep skips them: it verifies keyword spelling, not
+	// plugin presence. AUDIT_ADMIN is deliberately absent: the server core
+	// registers it unconditionally in dynamic_privilege_init(), so GRANT
+	// AUDIT_ADMIN succeeds even without the audit_log plugin and is swept.
 	pluginDependentServerPrivileges := map[string]struct{}{
 		"audit_abort_exempt":  {},
-		"audit_admin":         {},
 		"firewall_admin":      {},
 		"firewall_exempt":     {},
 		"firewall_user":       {},
 		"nbd_stored_user":     {},
+		"skip_query_rewrite":  {},
 		"version_token_admin": {},
 	}
 
 	// versionDependentServerPrivileges are dynamic privileges a later MySQL 8.x
 	// release removed but the catalog still emits for 8.0. SET_USER_ID was
-	// removed in 8.2.0, so a stock mysql:8 (currently 8.4) rejects it as
-	// unknown; the sweep skips it to verify keyword spelling, not server version.
+	// deprecated in 8.2.0 and removed in 8.4.0 (replaced by SET_ANY_DEFINER), so
+	// a stock mysql:8 (currently 8.4) rejects it as unknown; the sweep skips it
+	// to verify keyword spelling, not server version.
 	versionDependentServerPrivileges := map[string]struct{}{
 		"set_user_id": {},
 	}

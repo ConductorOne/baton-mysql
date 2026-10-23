@@ -85,7 +85,7 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 
 	parts := strings.Split(entitlement.Id, ":")
 	if len(parts) != 4 {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid entitlement ID: %s", entitlement.Id)
+		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", entitlement.Id)
 	}
 	privilege := parts[1]
 	keyword := tablePrivilege(privilege)
@@ -107,7 +107,7 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 func (s *tableSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	parts := strings.Split(grant.Entitlement.Id, ":")
 	if len(parts) != 4 {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid entitlement ID: %s", grant.Entitlement.Id)
+		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", grant.Entitlement.Id)
 	}
 	privilege := parts[1]
 	keyword := tablePrivilege(privilege)
