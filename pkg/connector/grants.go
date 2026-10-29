@@ -116,6 +116,8 @@ func buildGrant(privResource string, principalID *v2.ResourceId) *v2.Grant {
 }
 
 // listGlobalgrants returns a map keyed by entitlement ID for granted global privileges.
+// Non-ErrNoRows client failures fail the whole listing by design (I7/S1/S5):
+// an empty grants snapshot must never mask a real error.
 func listGlobalGrants(
 	ctx context.Context,
 	resourceID *v2.ResourceId,
@@ -253,6 +255,8 @@ func listColumnGrants(
 }
 
 // listProxyGrants returns a map keyed by entitlement ID for granted proxy privileges.
+// Every client error fails the whole listing by design (I7/S1/S5): an empty
+// proxy grants snapshot must never mask a real error.
 func listProxyGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
 	proxyGrants, err := c.ListProxyGrants(ctx, user, host)
 	if err != nil {
