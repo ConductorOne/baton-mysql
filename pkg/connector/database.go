@@ -118,7 +118,17 @@ func extractDatabasePrivilegeAndDb(entitlementID string) (string, string) {
 
 	privilegePart := parts[1]
 	database := parts[3]
+	if kw, ok := staticDatabasePrivileges[privilegePart]; ok {
+		return kw, database
+	}
 	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_", " "))
 
 	return priv, database
+}
+
+// staticDatabasePrivileges maps the catalog keys whose database-scope MySQL
+// spelling differs from the blanket underscore-to-space conversion. Every
+// other database privilege is already correct under that conversion.
+var staticDatabasePrivileges = map[string]string{
+	"grant": "GRANT OPTION",
 }
