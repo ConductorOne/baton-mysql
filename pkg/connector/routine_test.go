@@ -153,6 +153,78 @@ func TestCanonicalizeRoutineNames(t *testing.T) {
 	}
 }
 
+func TestRevokePerHosts(t *testing.T) {
+	tests := []struct {
+		name       string
+		user       string
+		revoke     func(account string) error
+		wantErr    bool
+		wantCalled []string
+	}{
+		{
+			name: "single host runs once",
+			user: "u@h1",
+			revoke: func(account string) error { return nil },
+			wantCalled: []string{"u@h1"},
+		},
+		{
+			name: "collapsed principal: one host 1403, other succeeds — success",
+			user: "u@h1,h2",
+			revoke: func(account string) error {
+				if account == "u@h1" {
+					return &mysql.MySQLError{Number: 1403}
+				}
+				return nil
+			},
+			wantCalled: []string{"u@h1", "u@h2"},
+		},
+		{
+			name: "collapsed principal: 1147 tolerated per host",
+			user: "u@h1,h2",
+			revoke: func(account string) error {
+				return &mysql.MySQLError{Number: 1147}
+			},
+			wantCalled: []string{"u@h1", "u@h2"},
+		},
+		{
+			name: "non-no-such-grant error is returned",
+			user: "u@h1,h2",
+			revoke: func(account string) error {
+				if account == "u@h1" {
+					return nil
+				}
+				return &mysql.MySQLError{Number: 1064}
+			},
+			wantErr:    true,
+			wantCalled: []string{"u@h1", "u@h2"},
+		},
+		{
+			name:    "malformed principal errors",
+			user:    "u",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var called []string
+			err := revokePerHosts(tt.user, func(account string) error {
+				called = append(called, account)
+				if tt.revoke == nil {
+					return nil
+				}
+				return tt.revoke(account)
+			})
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantCalled, called)
+		})
+	}
+}
+
 func TestRoutinePrivilege(t *testing.T) {
 	tests := []struct {
 		name         string

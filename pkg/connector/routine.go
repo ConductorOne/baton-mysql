@@ -165,23 +165,33 @@ func isNoSuchGrantErr(err error) bool {
 // even when nothing else is held: the Grant-only row is exactly the state
 // GrantRoutinePrivilege's `GRANT USAGE ... WITH GRANT OPTION` fallback creates, and
 // skipping it left the row in place so the next sync re-emitted the grant forever.
-func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, schema, routineName, user string) (annotations.Annotations, error) {
-	// The revoke runs once per host of a (possibly collapsed) principal: MySQL 8
-	// account-management statements are atomic, so a single REVOKE listing
-	// 'u'@'h1', 'u'@'h2' rolls back entirely when one host has no such grant (1403)
-	// while the other does. Per host, a no-such-grant error (1403/1147) is
-	// idempotent success for that host only.
+// revokePerHosts runs revoke once per host of a (possibly collapsed) principal
+// ("user@h1,h2"): MySQL 8 account-management statements are atomic, so a single
+// REVOKE listing 'u'@'h1', 'u'@'h2' rolls back entirely when one host has no such
+// grant (1403) while the other does. Per host, a no-such-grant error (1403/1147) is
+// idempotent success for that host only; any other error is returned. DB-free so it
+// is table-testable.
+func revokePerHosts(user string, revoke func(account string) error) error {
 	lookupUser, hosts, splitErr := client.SplitUserHost(user)
 	if splitErr != nil {
-		return nil, fmt.Errorf("baton-mysql: malformed principal ID: %w", splitErr)
+		return fmt.Errorf("baton-mysql: malformed principal ID: %w", splitErr)
 	}
 	for _, host := range strings.Split(hosts, ",") {
-		if err := s.client.RevokeRoutineGrantOption(ctx, schema, routineName, lookupUser+"@"+host); err != nil {
+		if err := revoke(lookupUser + "@" + host); err != nil {
 			if isNoSuchGrantErr(err) {
 				continue
 			}
-			return nil, fmt.Errorf("failed to revoke grant option on %s.%s from %s: %w", schema, routineName, user, err)
+			return err
 		}
+	}
+	return nil
+}
+
+func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, schema, routineName, user string) (annotations.Annotations, error) {
+	if err := revokePerHosts(user, func(account string) error {
+		return s.client.RevokeRoutineGrantOption(ctx, schema, routineName, account)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to revoke grant option on %s.%s from %s: %w", schema, routineName, user, err)
 	}
 	return nil, nil
 }
@@ -230,23 +240,12 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
 	}
 
-	// The revoke runs once per host of a (possibly collapsed) principal: MySQL 8
-	// account-management statements are atomic, so a single REVOKE listing
-	// 'u'@'h1', 'u'@'h2' rolls back entirely when one host has no such grant (1403)
-	// while the other does. Per host, a no-such-grant error (1403/1147) is
-	// idempotent success for that host only.
-	lookupUser, hosts, splitErr := client.SplitUserHost(user)
-	if splitErr != nil {
-		return nil, fmt.Errorf("baton-mysql: malformed principal ID %s: %w", grant.Principal.Id.Resource, splitErr)
-	}
-	for _, host := range strings.Split(hosts, ",") {
-		err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, lookupUser+"@"+host)
-		if err != nil {
-			if isNoSuchGrantErr(err) {
-				continue
-			}
-			return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
-		}
+	// The revoke runs once per host of a (possibly collapsed) principal — see
+	// revokePerHosts for why the statement must not list both hosts at once.
+	if err := revokePerHosts(user, func(account string) error {
+		return s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, account)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
 	}
 
 	return nil, nil
