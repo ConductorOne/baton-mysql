@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"fmt"
 	"testing"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -60,5 +59,6 @@ func TestBuildGrantCollapsedUsers(t *testing.T) {
 	g := buildGrant("role_assignment:role:app_reader@%", &v2.ResourceId{ResourceType: "user", Resource: "user:plain_user@%,localhost"})
 
 	require.Equal(t, &v2.ResourceId{ResourceType: "user", Resource: "user:plain_user@%,localhost"}, g.Principal.Id)
-	require.NotContains(t, fmt.Sprintf("%s:%s", g.Id, g.Principal.Id.Resource), "user:plain_user@localhost")
+	require.Contains(t, g.Id, "user:plain_user@%,localhost")
+	require.NotContains(t, g.Principal.Id.Resource, "user:plain_user@localhost")
 }

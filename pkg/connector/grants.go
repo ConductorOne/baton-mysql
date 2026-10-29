@@ -274,6 +274,10 @@ func roleGrantKeys(id string, withAdmin bool) []string {
 // buildGrant builds the emitted v2.Grant for one entitlement-map key.
 // privResource is "<entitlement-slug>:<resource-id>"; principalID is the
 // synced resource's own (possibly collapsed) ID.
+// Caller contract: privResource must already be validated as
+// "<slug>:<type>:<id>" (grantsForUserOrRole does this immediately before
+// calling) — buildGrant indexes the split parts unguarded and panics on
+// malformed input otherwise.
 func buildGrant(privResource string, principalID *v2.ResourceId) *v2.Grant {
 	entitlementID := fmt.Sprintf("entitlement:%s", privResource)
 	privParts := strings.SplitN(privResource, ":", 2)

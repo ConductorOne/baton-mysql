@@ -321,7 +321,7 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) (
 	var out []*RoleGrant
 	err := c.db.SelectContext(ctx, &out, q, user, host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("baton-mysql: unable to list role grants for %s@%s: %w", user, host, err)
 	}
 
 	var ret []*RoleGrant
