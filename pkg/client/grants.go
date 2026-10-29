@@ -243,10 +243,10 @@ type ProxyGrant struct {
 	WithGrant   int    `db:"With_grant"`
 }
 
-// ListProxyGrants returns a single user@host row and its perms
+// ListProxyGrants returns the mysql.proxies_priv rows for a user@host.
 // Grants required:
 //
-//	GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO user@host;
+//	GRANT SELECT (Host, User, Proxied_host, Proxied_user, With_grant) ON mysql.proxies_priv TO user@host;
 func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) ([]*ProxyGrant, error) {
 	q := `SELECT
     		User,
@@ -264,7 +264,11 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 
 	var ret []*ProxyGrant
 	for _, r := range out {
-		if r.ProxiedUser == r.User {
+		// Self-proxy skip is host-aware: only drop a row whose proxied
+		// account is the SAME user@host. A same-user-different-host proxy
+		// grant, e.g. GRANT PROXY ON 'dup'@'localhost' TO 'dup'@'%', is a
+		// real, distinct-account grant (mirrors isSelfRoleEdge policy).
+		if isSelfProxyGrant(r) {
 			continue
 		}
 
@@ -383,6 +387,14 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) (
 // 'dup'@'%' TO 'dup'@'localhost', is NOT a self edge and must sync.
 func isSelfRoleEdge(r *RoleGrant) bool {
 	return r.FromUser == r.ToUser && r.FromHost == r.ToHost
+}
+
+// isSelfProxyGrant reports whether a proxies_priv row's proxied account is
+// the SAME user AND host as the grantee. A same-user-different-host proxy
+// grant, e.g. GRANT PROXY ON 'dup'@'localhost' TO 'dup'@'%', is NOT a self
+// grant and must sync (mirrors isSelfRoleEdge policy).
+func isSelfProxyGrant(r *ProxyGrant) bool {
+	return r.ProxiedUser == r.User && r.ProxiedHost == r.Host
 }
 
 // isAccountNotFoundErr reports whether err is (or wraps) sql.ErrNoRows — a

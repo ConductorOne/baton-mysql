@@ -43,6 +43,44 @@ func TestIsSelfRoleEdge(t *testing.T) {
 	}
 }
 
+// TestProxySelfEdgeSkipIsHostAware mirrors TestIsSelfRoleEdge for the
+// ListProxyGrants skip: only same-user-AND-same-host proxy rows are dropped;
+// a same-user-different-host proxy grant is a real grant and must sync.
+func TestProxySelfEdgeSkipIsHostAware(t *testing.T) {
+	tests := []struct {
+		name string
+		r    *ProxyGrant
+		want bool
+	}{
+		{
+			name: "same user, different host — not a self proxy grant, must sync",
+			r:    &ProxyGrant{User: "dup", Host: "%", ProxiedUser: "dup", ProxiedHost: "localhost"},
+			want: false,
+		},
+		{
+			name: "same user and same host — self proxy grant, dropped",
+			r:    &ProxyGrant{User: "dup", Host: "%", ProxiedUser: "dup", ProxiedHost: "%"},
+			want: true,
+		},
+		{
+			name: "differing user, same host",
+			r:    &ProxyGrant{User: "a", Host: "%", ProxiedUser: "b", ProxiedHost: "%"},
+			want: false,
+		},
+		{
+			name: "empty proxied account — server-info row, never self",
+			r:    &ProxyGrant{User: "root", Host: "localhost", ProxiedUser: "", ProxiedHost: ""},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isSelfProxyGrant(tt.r)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestIsAccountNotFoundErr(t *testing.T) {
 	tests := []struct {
 		name string
