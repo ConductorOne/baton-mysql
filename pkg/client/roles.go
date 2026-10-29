@@ -9,6 +9,11 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
+const (
+	privRoleAssignment          = "role_assignment"
+	privRoleAssignmentWithGrant = "role_assignment_with_grant"
+)
+
 // splitCollapsedAccount validates a user@host account name and returns one quoted
 // 'user'@'host' account per host variant. Collapsed users (user@host1,host2) expand to
 // one account per host; plain accounts expand to a single-element slice.
@@ -51,9 +56,9 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 
 	var grantStmt string
 	switch privilege {
-	case "role_assignment":
+	case privRoleAssignment:
 		grantStmt = fmt.Sprintf("GRANT %s TO %s", roleAccount, userAccount)
-	case "role_assignment_with_grant":
+	case privRoleAssignmentWithGrant:
 		grantStmt = fmt.Sprintf("GRANT %s TO %s WITH ADMIN OPTION", roleAccount, userAccount)
 	case "proxy":
 		grantStmt = fmt.Sprintf("GRANT PROXY ON %s TO %s", roleAccount, userAccount)
@@ -79,7 +84,7 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 
 	var revokeStmt string
 	switch privilege {
-	case "role_assignment", "role_assignment_with_grant":
+	case privRoleAssignment, privRoleAssignmentWithGrant:
 		revokeStmt = fmt.Sprintf("REVOKE %s FROM %s", roleAccount, userAccount)
 	case "proxy", "proxy_with_grant":
 		revokeStmt = fmt.Sprintf("REVOKE PROXY ON %s FROM %s", roleAccount, userAccount)
@@ -87,7 +92,7 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		return fmt.Errorf("unknown privilege: %s", privilege)
 	}
 
-	if isCollapsedAccount(user) && (privilege == "role_assignment" || privilege == "role_assignment_with_grant") {
+	if isCollapsedAccount(user) && (privilege == privRoleAssignment || privilege == privRoleAssignmentWithGrant) {
 		return c.revokeRolePerVariant(ctx, roleAccount, user, privilege)
 	}
 
