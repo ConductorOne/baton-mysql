@@ -104,8 +104,18 @@ func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, sc
 		return err
 	}
 
-	query := fmt.Sprintf("GRANT %s ON %s %s.%s TO %s",
-		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userGrant)
+	// R2 fallback form: the primary `GRANT GRANT OPTION ON PROCEDURE ...` statement could
+	// not be live-verified on MySQL 8.0 in this environment (no MySQL validation
+	// environment available), so the connector ships the `WITH GRANT OPTION` form
+	// (the extractServerPrivilege WITH GRANT OPTION precedent in pkg/connector/server.go).
+	var query string
+	if privilege == "GRANT OPTION" {
+		query = fmt.Sprintf("GRANT USAGE ON %s %s.%s TO %s WITH GRANT OPTION",
+			strings.ToUpper(routineType), schemaEsc, routineNameEsc, userGrant)
+	} else {
+		query = fmt.Sprintf("GRANT %s ON %s %s.%s TO %s",
+			privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userGrant)
+	}
 
 	_, err = c.db.ExecContext(ctx, query)
 	return err
