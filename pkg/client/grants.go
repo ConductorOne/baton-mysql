@@ -330,11 +330,14 @@ func (c *Client) canonicalizeRoutineNames(ctx context.Context, grants []*Routine
 	schemas := make([]string, 0, len(grants))
 	seen := make(map[string]struct{}, len(grants))
 	for _, g := range grants {
-		key := strings.ToLower(g.Database)
-		if _, ok := seen[key]; ok {
+		// Dedupe on the exact Db string: with lower_case_table_names=0 (the Linux
+		// default) the server compares ROUTINE_SCHEMA case-sensitively, so a
+		// case-insensitive dedupe would drop one of `Foo`/`foo` from the IN list
+		// and leave its routines uncanonicalized.
+		if _, ok := seen[g.Database]; ok {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[g.Database] = struct{}{}
 		schemas = append(schemas, g.Database)
 	}
 	placeholders := strings.TrimRight(strings.Repeat("?, ", len(schemas)), ", ")
