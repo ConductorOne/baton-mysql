@@ -250,7 +250,7 @@ func listRoutineGrants(ctx context.Context, user, host string, grantMap map[stri
 		return err
 	}
 
-	for _, k := range routineGrantKeys(routineGrants, skipDbs) {
+	for _, k := range routineGrantKeys(ctx, routineGrants, skipDbs) {
 		grantMap[k] = struct{}{}
 	}
 
@@ -258,13 +258,13 @@ func listRoutineGrants(ctx context.Context, user, host string, grantMap map[stri
 }
 
 // routineGrantKeys builds the entitlement keys for the given routine grants, skipping grants in skipped databases.
-func routineGrantKeys(grants []*client.RoutineGrant, skipDbs map[string]struct{}) []string {
+func routineGrantKeys(ctx context.Context, grants []*client.RoutineGrant, skipDbs map[string]struct{}) []string {
 	var keys []string
 	for _, g := range grants {
 		if _, ok := skipDbs[g.Database]; ok {
 			continue
 		}
-		for priv := range g.GetPrivs(context.Background()) {
+		for priv := range g.GetPrivs(ctx) {
 			keys = append(keys, fmt.Sprintf("%s:%s", strings.ToLower(priv), g.Id))
 		}
 	}

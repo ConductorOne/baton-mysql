@@ -317,8 +317,9 @@ func CanonicalRoutineMap(rows []RoutineSchemaRow) map[string]string {
 // information_schema.ROUTINES case so grant keys align with existing routine resource
 // IDs (which are derived from information_schema via ListRoutines). Rows whose routine
 // no longer exists in ROUTINES (an orphaned procs_priv row for a dropped routine) keep
-// the procs_priv case instead of being dropped, so the grant still surfaces — and can
-// be revoked — rather than disappearing silently. The ROUTINES query is bounded to
+// the procs_priv case instead of being dropped, so the stale grant still surfaces
+// rather than disappearing silently; revocation of such an orphaned grant errors
+// until the procs_priv row is cleaned up. The ROUTINES query is bounded to
 // the distinct schemas present in the grant rows: ListRoutineGrants runs
 // once per host per principal, so an unbounded scan of information_schema.ROUTINES
 // would cost principals × routines rows.

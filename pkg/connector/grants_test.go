@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"sort"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestRoutineGrantKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := routineGrantKeys(tt.grants, tt.skipDbs)
+			got := routineGrantKeys(context.Background(), tt.grants, tt.skipDbs)
 			// GetPrivs returns a map, so compare as sorted sets, not positional order.
 			sort.Strings(got)
 			want := append([]string(nil), tt.want...)
