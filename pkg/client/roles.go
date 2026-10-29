@@ -2,8 +2,42 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/go-sql-driver/mysql"
 )
+
+// splitCollapsedAccount validates a user@host account name and returns one quoted
+// 'user'@'host' account per host variant. Collapsed users (user@host1,host2) expand to
+// one account per host; plain accounts expand to a single-element slice.
+func splitCollapsedAccount(account string) ([]string, error) {
+	user, hosts, err := SplitUserHost(account)
+	if err != nil {
+		return nil, err
+	}
+	var quoted []string
+	for _, host := range strings.Split(hosts, ",") {
+		q, err := quoteUserHost(user, host)
+		if err != nil {
+			return nil, err
+		}
+		quoted = append(quoted, q)
+	}
+	return quoted, nil
+}
+
+// isNoSuchGrantErr reports whether err is MySQL ER_NONEXISTING_GRANT (1147), which
+// REVOKE raises when the named account does not hold the privilege. Tolerating it
+// makes revokes idempotent: revoking an entitlement already absent is success.
+func isNoSuchGrantErr(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1147
+	}
+	return false
+}
 
 func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege string) error {
 	roleAccount, err := quoteAccount(role)
@@ -53,6 +87,39 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		return fmt.Errorf("unknown privilege: %s", privilege)
 	}
 
+	if isCollapsedAccount(user) && (privilege == "role_assignment" || privilege == "role_assignment_with_grant") {
+		return c.revokeRolePerVariant(ctx, roleAccount, user, privilege)
+	}
+
 	_, err = c.db.ExecContext(ctx, revokeStmt)
 	return err
+}
+
+// isCollapsedAccount reports whether the account's host part lists multiple hosts.
+func isCollapsedAccount(account string) bool {
+	_, hosts, err := SplitUserHost(account)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(hosts, ",")
+}
+
+// revokeRolePerVariant revokes the role from each host variant of a collapsed
+// principal separately. MySQL rejects a multi-account REVOKE outright when any named
+// account does not hold the grant (ER_NONEXISTING_GRANT, 1147), so a membership edge
+// held by only some host variants would fail the whole statement. Revoking per
+// variant and tolerating 1147 per variant keeps the revoke idempotent: state already
+// matching the desired state is success. Every other error fails wrapped.
+func (c *Client) revokeRolePerVariant(ctx context.Context, roleAccount, user, privilege string) error {
+	variants, err := splitCollapsedAccount(user)
+	if err != nil {
+		return fmt.Errorf("invalid user %s: %w", user, err)
+	}
+	for _, variant := range variants {
+		stmt := fmt.Sprintf("REVOKE %s FROM %s", roleAccount, variant)
+		if _, err := c.db.ExecContext(ctx, stmt); err != nil && !isNoSuchGrantErr(err) {
+			return fmt.Errorf("revoke %s from %s: %w", roleAccount, variant, err)
+		}
+	}
+	return nil
 }
