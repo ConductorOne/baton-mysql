@@ -11,7 +11,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	"github.com/go-sql-driver/mysql"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type routineSyncer struct {
@@ -112,15 +111,6 @@ func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entit
 
 	err = s.client.GrantRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	if err != nil {
-		// Idempotency: MySQL does not have a uniform error code for "grant already exists"
-		// across versions, so detect it from the error string (case-insensitive).
-		if strings.Contains(strings.ToLower(err.Error()), "already exists") {
-			anno, aErr := anypb.New(&v2.GrantAlreadyExists{})
-			if aErr != nil {
-				return nil, fmt.Errorf("baton-mysql: failed to build GrantAlreadyExists annotation: %w", aErr)
-			}
-			return annotations.Annotations{anno}, nil
-		}
 		return nil, fmt.Errorf("failed to grant %s on %s.%s to %s: %w", privilege, schema, routineName, user, err)
 	}
 
@@ -174,17 +164,25 @@ func isNoSuchGrantErr(err error) bool {
 // Grant bit of the procs_priv row and leaves EXECUTE/ALTER ROUTINE in place. SQL runs
 // even when nothing else is held: the Grant-only row is exactly the state
 // GrantRoutinePrivilege's `GRANT USAGE ... WITH GRANT OPTION` fallback creates, and
-// skipping it left the row in place so the next sync re-emitted the grant forever. When
-// no such grant exists the server raises 1403 (routine-level no-such-grant), which is
-// treated as already-done (isNoSuchGrantErr).
+// skipping it left the row in place so the next sync re-emitted the grant forever.
 func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, schema, routineName, user string) (annotations.Annotations, error) {
-	if err := s.client.RevokeRoutineGrantOption(ctx, schema, routineName, user); err != nil {
-		if isNoSuchGrantErr(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to revoke grant option on %s.%s from %s: %w", schema, routineName, user, err)
+	// The revoke runs once per host of a (possibly collapsed) principal: MySQL 8
+	// account-management statements are atomic, so a single REVOKE listing
+	// 'u'@'h1', 'u'@'h2' rolls back entirely when one host has no such grant (1403)
+	// while the other does. Per host, a no-such-grant error (1403/1147) is
+	// idempotent success for that host only.
+	lookupUser, hosts, splitErr := client.SplitUserHost(user)
+	if splitErr != nil {
+		return nil, fmt.Errorf("baton-mysql: malformed principal ID: %w", splitErr)
 	}
-
+	for _, host := range strings.Split(hosts, ",") {
+		if err := s.client.RevokeRoutineGrantOption(ctx, schema, routineName, lookupUser+"@"+host); err != nil {
+			if isNoSuchGrantErr(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to revoke grant option on %s.%s from %s: %w", schema, routineName, user, err)
+		}
+	}
 	return nil, nil
 }
 
@@ -232,12 +230,23 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
 	}
 
-	err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
-	if err != nil {
-		if isNoSuchGrantErr(err) {
-			return nil, nil
+	// The revoke runs once per host of a (possibly collapsed) principal: MySQL 8
+	// account-management statements are atomic, so a single REVOKE listing
+	// 'u'@'h1', 'u'@'h2' rolls back entirely when one host has no such grant (1403)
+	// while the other does. Per host, a no-such-grant error (1403/1147) is
+	// idempotent success for that host only.
+	lookupUser, hosts, splitErr := client.SplitUserHost(user)
+	if splitErr != nil {
+		return nil, fmt.Errorf("baton-mysql: malformed principal ID %s: %w", grant.Principal.Id.Resource, splitErr)
+	}
+	for _, host := range strings.Split(hosts, ",") {
+		err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, lookupUser+"@"+host)
+		if err != nil {
+			if isNoSuchGrantErr(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
 		}
-		return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
 	}
 
 	return nil, nil
