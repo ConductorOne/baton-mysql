@@ -2,6 +2,9 @@ package client
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -296,7 +299,18 @@ type RoleGrant struct {
 	WithGrant string `db:"WITH_ADMIN_OPTION"`
 }
 
-// ListRoleGrants returns a single user@host row and its role edges
+// ListRoleGrants returns the role edges WHERE the given user@host is the
+// GRANTEE: the query predicates on TO_USER and TO_HOST, so the synced account
+// is the receiving (TO) side of each edge.
+//
+// RoleGrant.Id is set to the GRANTED ROLE's resource ID: the FROM side
+// (FROM_USER/FROM_HOST) is resolved via GetUser, yielding an ID such as
+// "role:ops@team@%".
+//
+// Per-edge GetUser failures skip only sql.ErrNoRows (a genuinely absent
+// account mid-sync — MySQL 8 returns no row for a missing account, not a
+// permission error), logged at Debug; every other error is returned wrapped.
+//
 // Grants required:
 //
 //	GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO user@host;
@@ -307,7 +321,7 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) (
 			TO_HOST,
 			TO_USER,
 			WITH_ADMIN_OPTION
-		FROM mysql.role_edges WHERE FROM_USER = ? AND FROM_HOST = ?`
+		FROM mysql.role_edges WHERE TO_USER = ? AND TO_HOST = ?`
 
 	var out []*RoleGrant
 	err := c.db.SelectContext(ctx, &out, q, user, host)
@@ -317,25 +331,35 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) (
 
 	var ret []*RoleGrant
 	for _, r := range out {
-		if r.FromUser == r.ToUser {
+		if isSelfRoleEdge(r) {
 			continue
 		}
 
 		newR := r
 
-		u, err := c.GetUser(ctx, r.ToUser, r.ToHost)
+		u, err := c.GetUser(ctx, r.FromUser, r.FromHost)
 		if err != nil {
-			ctxzap.Extract(ctx).Error(
-				"unable to fetch to user for role. Ignoring grant",
-				zap.Error(err),
-				zap.String("to_user", r.ToUser),
-				zap.String("to_host", r.ToHost),
-			)
-			continue
+			if errors.Is(err, sql.ErrNoRows) {
+				ctxzap.Extract(ctx).Debug(
+					"role edge FROM account not found; skipping grant",
+					zap.Error(err),
+					zap.String("from_user", r.FromUser),
+					zap.String("from_host", r.FromHost),
+				)
+				continue
+			}
+			return nil, fmt.Errorf("baton-mysql: unable to fetch role edge from account %s@%s: %w", r.FromUser, r.FromHost, err)
 		}
 		newR.Id = u.GetID()
 		ret = append(ret, newR)
 	}
 
 	return ret, nil
+}
+
+// isSelfRoleEdge reports whether a role_edges row grants a role to itself
+// (same user AND same host). A same-user-different-host edge, e.g.
+// 'dup'@'%' TO 'dup'@'localhost', is NOT a self edge and must sync.
+func isSelfRoleEdge(r *RoleGrant) bool {
+	return r.FromUser == r.ToUser && r.FromHost == r.ToHost
 }
