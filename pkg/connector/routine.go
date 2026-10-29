@@ -174,43 +174,32 @@ func isNoSuchGrantErr(err error) bool {
 // held, or the revoke reports a no-such-grant error (1147 table-level / 1403
 // routine-level), the end state already holds and this is a no-op success.
 func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, grant *v2.Grant, schema, routineName, user string) (annotations.Annotations, error) {
-	lookupUser, host, splitErr := client.SplitUserHost(user)
+	// user is the full user@host from principalAccount; the procs_priv query needs the bare
+	// name and, for collapsed users (user@host1,host2), one query per host — same host loop
+	// as grantsForUserOrRole. A comma-joined host used directly would match no row and turn
+	// a needed revoke into a silent success.
+	lookupUser, hosts, splitErr := client.SplitUserHost(user)
 	if splitErr != nil {
 		return nil, fmt.Errorf("baton-mysql: malformed principal ID %s: %w", grant.Principal.Id.Resource, splitErr)
 	}
 
-	held, err := s.client.ListRoutineGrants(ctx, lookupUser, host)
-	if err != nil {
-		return nil, err
+	var held []*client.RoutineGrant
+	for _, host := range strings.Split(hosts, ",") {
+		rows, err := s.client.ListRoutineGrants(ctx, lookupUser, host)
+		if err != nil {
+			return nil, err
+		}
+		held = append(held, rows...)
 	}
 
-	privSet := make(map[string]struct{})
-	for _, g := range held {
-		if g.Database != schema || g.RoutineName != routineName {
-			continue
-		}
-		for priv := range g.GetPrivs(ctx) {
-			if strings.ToLower(priv) == "grant" {
-				continue
-			}
-			privSet[strings.ToUpper(strings.ReplaceAll(priv, "_", " "))] = struct{}{}
-		}
-	}
+	heldPrivs := routineHeldPrivs(held, schema, routineName)
 
-	if len(privSet) == 0 {
+	if len(heldPrivs) == 0 {
 		// Nothing but the grant option is held (or the row is gone): nothing to revoke.
 		return nil, nil
 	}
 
-	privs := make([]string, 0, len(privSet))
-	for p := range privSet {
-		privs = append(privs, p)
-	}
-	sort.Strings(privs)
-	heldPrivs := strings.Join(privs, ", ")
-
-	err = s.client.RevokeRoutineGrantOption(ctx, heldPrivs, schema, routineName, user)
-	if err != nil {
+	if err := s.client.RevokeRoutineGrantOption(ctx, strings.Join(heldPrivs, ", "), schema, routineName, user); err != nil {
 		if isNoSuchGrantErr(err) {
 			return nil, nil
 		}
@@ -219,6 +208,35 @@ func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, grant *v2.
 
 	return nil, nil
 }
+
+// routineHeldPrivs decodes the HELD routine privileges from procs_priv rows matching the
+// target schema+routine (R3): the Grant member is excluded, each remaining priv is
+// uppercased with underscores restored ("Alter_Routine" -> "ALTER ROUTINE"), rows are
+// UNIONed with dedupe (the collapsed PROCEDURE+FUNCTION case), and the result is sorted
+// so the emitted REVOKE SQL is deterministic. DB-free so it is unit-testable.
+func routineHeldPrivs(grants []*client.RoutineGrant, schema, routineName string) []string {
+	heldSet := make(map[string]struct{})
+	for _, g := range grants {
+		if g.Database != schema || g.RoutineName != routineName {
+			continue
+		}
+		for p := range g.GetPrivs(context.Background()) {
+			if strings.EqualFold(p, "grant") {
+				continue // exclude the Grant member itself (R3)
+			}
+			heldSet[strings.ToUpper(strings.ReplaceAll(p, "_", " "))] = struct{}{}
+		}
+	}
+
+	held := make([]string, 0, len(heldSet))
+	for p := range heldSet {
+		held = append(held, p)
+	}
+	sort.Strings(held)
+
+	return held
+}
+
 func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	parts := strings.Split(grant.Entitlement.Id, ":")
 	if len(parts) != 4 {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/conductorone/baton-mysql/pkg/client"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 )
@@ -49,6 +50,61 @@ func TestIsNoSuchGrantErr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, isNoSuchGrantErr(tt.err))
+		})
+	}
+}
+
+func TestRoutineHeldPrivs(t *testing.T) {
+	tests := []struct {
+		name   string
+		grants []*client.RoutineGrant
+		want   []string
+	}{
+		{
+			name:   "matching row decodes uppercased with spaces",
+			grants: []*client.RoutineGrant{{Database: "db1", RoutineName: "p1", Privs: "Execute,Alter Routine,Grant"}},
+			want:   []string{"ALTER ROUTINE", "EXECUTE"},
+		},
+		{
+			name: "grant-only row yields empty",
+			grants: []*client.RoutineGrant{
+				{Database: "db1", RoutineName: "p1", Privs: "Grant"},
+			},
+			want: []string{},
+		},
+		{
+			name: "non-matching schema or routine ignored",
+			grants: []*client.RoutineGrant{
+				{Database: "other", RoutineName: "p1", Privs: "Execute"},
+				{Database: "db1", RoutineName: "other", Privs: "Execute"},
+			},
+			want: []string{},
+		},
+		{
+			name: "collapsed rows union with dedupe",
+			grants: []*client.RoutineGrant{
+				{Database: "db1", RoutineName: "p1", Privs: "Execute"},
+				{Database: "db1", RoutineName: "p1", Privs: "Execute,Grant"},
+			},
+			want: []string{"EXECUTE"},
+		},
+		{
+			name: "sorted deterministically",
+			grants: []*client.RoutineGrant{
+				{Database: "db1", RoutineName: "p1", Privs: "Alter Routine,Execute"},
+			},
+			want: []string{"ALTER ROUTINE", "EXECUTE"},
+		},
+		{
+			name:   "no rows yields empty",
+			grants: nil,
+			want:   []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, routineHeldPrivs(tt.grants, "db1", "p1"))
 		})
 	}
 }
