@@ -1,6 +1,7 @@
 package client
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -58,5 +59,6 @@ func TestRoutineTypesFromRows(t *testing.T) {
 func TestRoutineTypesFromRowsNotFoundWrapsNoRows(t *testing.T) {
 	_, err := routineTypesFromRows(nil, "db1", "p1")
 	require.Error(t, err)
+	require.ErrorIs(t, err, sql.ErrNoRows, "error must wrap sql.ErrNoRows")
 	require.True(t, strings.HasPrefix(err.Error(), "baton-mysql: "), "error must carry the baton-mysql prefix, got: %s", err.Error())
 }

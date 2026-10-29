@@ -162,9 +162,9 @@ func TestRevokePerHosts(t *testing.T) {
 		wantCalled []string
 	}{
 		{
-			name: "single host runs once",
-			user: "u@h1",
-			revoke: func(account string) error { return nil },
+			name:       "single host runs once",
+			user:       "u@h1",
+			revoke:     func(account string) error { return nil },
 			wantCalled: []string{"u@h1"},
 		},
 		{
