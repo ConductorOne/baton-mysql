@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -74,34 +76,43 @@ func grantsForUserOrRole(
 	for privResource := range grantMap {
 		privParts := strings.SplitN(privResource, ":", 2)
 		if len(privParts) != 2 {
-			return nil, fmt.Errorf("malformed priv resource id")
+			return nil, fmt.Errorf("baton-mysql: malformed priv resource id %s", privResource)
 		}
 
 		resourceParts := strings.SplitN(privParts[1], ":", 2)
 		if len(resourceParts) != 2 {
-			return nil, fmt.Errorf("malformed resource ID")
+			return nil, fmt.Errorf("baton-mysql: malformed resource ID %s", privParts[1])
 		}
 
-		entitlementID := fmt.Sprintf("entitlement:%s", privResource)
-		ret = append(ret, &v2.Grant{
-			Entitlement: &v2.Entitlement{
-				Id: entitlementID,
-				Resource: &v2.Resource{
-					Id: &v2.ResourceId{
-						ResourceType: resourceParts[0],
-						Resource:     fmt.Sprintf("%s:%s", resourceParts[0], resourceParts[1]),
-					},
-				},
-			},
-			Principal: &v2.Resource{
-				Id: resource.Id,
-			},
-			Id:          fmt.Sprintf("grant:%s:%s", entitlementID, resource.Id.Resource),
-			Annotations: nil,
-		})
+		ret = append(ret, buildGrant(privResource, resource.Id))
 	}
 
 	return ret, nil
+}
+
+// buildGrant builds the emitted v2.Grant for one entitlement-map key.
+// privResource is "<entitlement-slug>:<resource-id>"; principalID is the
+// synced resource's own (possibly collapsed) ID.
+func buildGrant(privResource string, principalID *v2.ResourceId) *v2.Grant {
+	entitlementID := fmt.Sprintf("entitlement:%s", privResource)
+	privParts := strings.SplitN(privResource, ":", 2)
+	resourceParts := strings.SplitN(privParts[1], ":", 2)
+	return &v2.Grant{
+		Entitlement: &v2.Entitlement{
+			Id: entitlementID,
+			Resource: &v2.Resource{
+				Id: &v2.ResourceId{
+					ResourceType: resourceParts[0],
+					Resource:     fmt.Sprintf("%s:%s", resourceParts[0], resourceParts[1]),
+				},
+			},
+		},
+		Principal: &v2.Resource{
+			Id: principalID,
+		},
+		Id:          fmt.Sprintf("grant:%s:%s", entitlementID, principalID.Resource),
+		Annotations: nil,
+	}
 }
 
 // listGlobalgrants returns a map keyed by entitlement ID for granted global privileges.
@@ -114,13 +125,16 @@ func listGlobalGrants(
 ) error {
 	u, err := c.GetUser(ctx, user, host)
 	if err != nil {
-		ctxzap.Extract(ctx).Error(
-			"unable to fetch to user for global grant. Ignoring grants",
-			zap.Error(err),
-			zap.String("user", user),
-			zap.String("host", host),
-		)
-		return nil
+		if errors.Is(err, sql.ErrNoRows) {
+			ctxzap.Extract(ctx).Debug(
+				"account not found for global grants; skipping",
+				zap.Error(err),
+				zap.String("user", user),
+				zap.String("host", host),
+			)
+			return nil
+		}
+		return fmt.Errorf("baton-mysql: unable to fetch account for global grants %s@%s: %w", user, host, err)
 	}
 
 	if c.IsVersion8() {
@@ -242,13 +256,7 @@ func listColumnGrants(
 func listProxyGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
 	proxyGrants, err := c.ListProxyGrants(ctx, user, host)
 	if err != nil {
-		ctxzap.Extract(ctx).Error(
-			"unable to fetch to proxy grants. ignoring",
-			zap.Error(err),
-			zap.String("user", user),
-			zap.String("host", host),
-		)
-		return nil
+		return fmt.Errorf("baton-mysql: unable to fetch proxy grants for %s@%s: %w", user, host, err)
 	}
 
 	for _, g := range proxyGrants {
@@ -269,11 +277,21 @@ func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]
 	}
 
 	for _, g := range roleGrants {
-		grantMap[fmt.Sprintf("role_assignment:%s", g.Id)] = struct{}{}
-		if g.WithGrant == "Y" {
-			grantMap[fmt.Sprintf("role_assignment_with_grant:%s", g.Id)] = struct{}{}
+		for _, key := range roleGrantKeys(g.Id, g.WithGrant == "Y") {
+			grantMap[key] = struct{}{}
 		}
 	}
 
 	return nil
+}
+
+// roleGrantKeys returns the entitlement-map keys for one role edge:
+// the membership key always, and the with-grant key additionally
+// (never as a replacement) when the edge carries WITH ADMIN OPTION.
+func roleGrantKeys(id string, withAdmin bool) []string {
+	keys := []string{fmt.Sprintf("role_assignment:%s", id)}
+	if withAdmin {
+		keys = append(keys, fmt.Sprintf("role_assignment_with_grant:%s", id))
+	}
+	return keys
 }
