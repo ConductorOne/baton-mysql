@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -136,16 +137,79 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 	return err
 }
 
+// RevokeRoutineGrantOption revokes the grant option for the given held privileges on a routine.
+// It builds `REVOKE GRANT OPTION FOR <heldPrivileges> ON <TYPE> <schema>.<routine> FROM <user>`.
+func (c *Client) RevokeRoutineGrantOption(ctx context.Context, heldPrivileges string, schema string, routineName string, user string) error {
+	routineType, err := c.GetRoutineType(ctx, schema, routineName)
+	if err != nil {
+		return err
+	}
+
+	schemaEsc, err := escapeMySQLIdent(schema)
+	if err != nil {
+		return err
+	}
+	routineNameEsc, err := escapeMySQLIdent(routineName)
+	if err != nil {
+		return err
+	}
+
+	userRevoke, err := quoteAccounts(user)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("REVOKE GRANT OPTION FOR %s ON %s %s.%s FROM %s",
+		heldPrivileges, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
+	_, err = c.db.ExecContext(ctx, query)
+	return err
+}
+
 func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string) (string, error) {
 	query := `
 		SELECT ROUTINE_TYPE
 		FROM information_schema.ROUTINES
 		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?
 	`
-	var routineType string
-	err := c.db.QueryRowContext(ctx, query, schema, routineName).Scan(&routineType)
+
+	rows, err := c.db.QueryxContext(ctx, query, schema, routineName)
 	if err != nil {
-		return "", fmt.Errorf("failed to get routine type: %w", err)
+		return "", fmt.Errorf("baton-mysql: failed to query routine type for %s.%s: %w", schema, routineName, err)
 	}
-	return routineType, nil
+	defer rows.Close()
+
+	var types []string
+	for rows.Next() {
+		var routineType string
+		if err := rows.Scan(&routineType); err != nil {
+			return "", fmt.Errorf("baton-mysql: failed to scan routine type for %s.%s: %w", schema, routineName, err)
+		}
+		types = append(types, routineType)
+	}
+	if rows.Err() != nil {
+		return "", fmt.Errorf("baton-mysql: failed to iterate routine type rows for %s.%s: %w", schema, routineName, rows.Err())
+	}
+
+	return routineTypesFromRows(types, schema, routineName)
+}
+
+// routineTypesFromRows resolves the routine type from the collected ROUTINE_TYPE rows.
+// 0 rows -> not found; 1 distinct type -> return it; >1 distinct type -> ambiguity error.
+func routineTypesFromRows(rows []string, schema, routineName string) (string, error) {
+	if len(rows) == 0 {
+		return "", fmt.Errorf("baton-mysql: routine %s.%s not found: %w", schema, routineName, sql.ErrNoRows)
+	}
+
+	seen := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		seen[r] = struct{}{}
+	}
+	if len(seen) > 1 {
+		return "", fmt.Errorf("baton-mysql: ambiguous routine name %s.%s resolves to both PROCEDURE and FUNCTION; routine resource IDs do not encode routine type — refusing to grant/revoke the wrong object", schema, routineName)
+	}
+
+	for r := range seen {
+		return r, nil
+	}
+	return "", fmt.Errorf("baton-mysql: routine %s.%s not found: %w", schema, routineName, sql.ErrNoRows)
 }

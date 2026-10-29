@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -225,6 +226,57 @@ func (c *Client) ListColumnGrants(ctx context.Context, user string, host string)
 			DatabaseName:    r.Database,
 			ResourceName:    r.Table,
 			SubResourceName: r.Column,
+		}.String()
+	}
+
+	return ret, nil
+}
+
+type RoutineGrant struct {
+	Id          string `db:"-"`
+	User        string `db:"User"`
+	Host        string `db:"Host"`
+	Database    string `db:"Db"`
+	RoutineName string `db:"Routine_name"`
+	Privs       string `db:"Proc_priv"`
+}
+
+// GetPrivs parses the routine grant data from mysql. Case-preserving, like TableGrant.GetPrivs.
+func (u *RoutineGrant) GetPrivs(ctx context.Context) map[string]struct{} {
+	ret := make(map[string]struct{})
+
+	privs := strings.Split(u.Privs, ",")
+	for _, p := range privs {
+		priv := strings.ReplaceAll(strings.TrimSpace(p), " ", "_")
+		if priv == "" {
+			continue
+		}
+
+		ret[priv] = struct{}{}
+	}
+
+	return ret
+}
+
+// ListRoutineGrants returns the routine (procedure/function) grants for a single user@host from mysql.procs_priv.
+// Grants required:
+//
+//	GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO user@host;
+func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string) ([]*RoutineGrant, error) {
+	q := `SELECT User, Host, Db, Routine_name, Proc_priv
+		FROM mysql.procs_priv WHERE User = ? AND Host = ?`
+
+	var ret []*RoutineGrant
+	err := c.db.SelectContext(ctx, &ret, q, user, host)
+	if err != nil {
+		return nil, fmt.Errorf("baton-mysql: failed to list routine grants from mysql.procs_priv (account %s@%s): %w; connector account needs: GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO <account>", user, host, err)
+	}
+
+	for i, r := range ret {
+		ret[i].Id = dbResourceID{
+			ResourceTypeID: RoutineType,
+			DatabaseName:   r.Database,
+			ResourceName:   r.RoutineName,
 		}.String()
 	}
 

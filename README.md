@@ -70,6 +70,8 @@ GRANT SELECT (Host, User, Db, Select_priv, Insert_priv, Update_priv,  Delete_pri
               Execute_priv, Create_view_priv, Show_view_priv, Create_routine_priv,
               Alter_routine_priv, Event_priv, Trigger_priv) ON mysql.db TO conductorone;
 GRANT SELECT (Host, User, Db, Table_priv, Table_name) ON mysql.tables_priv TO conductorone;
+# Routine (procedure/function) grants, required for routine-level grant sync.
+GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO conductorone;
 GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO conductorone;
 GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, Create_priv, Drop_priv, Reload_priv,
               Shutdown_priv, Process_priv,
@@ -88,6 +90,8 @@ GRANT SELECT (Host, User, Db, Select_priv, Insert_priv, Update_priv,  Delete_pri
               Execute_priv, Create_view_priv, Show_view_priv, Create_routine_priv,
               Alter_routine_priv, Event_priv, Trigger_priv) ON mysql.db TO conductorone;
 GRANT SELECT (Host, User, Db, Table_priv, Table_name) ON mysql.tables_priv TO conductorone;
+# Routine (procedure/function) grants, required for routine-level grant sync.
+GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO conductorone;
 GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO conductorone;
 GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, Create_priv, Drop_priv, Reload_priv,
               Shutdown_priv, Process_priv,

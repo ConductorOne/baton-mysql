@@ -2,13 +2,17 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/go-sql-driver/mysql"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type routineSyncer struct {
@@ -59,6 +63,10 @@ func (s *routineSyncer) Entitlements(ctx context.Context, resource *v2.Resource,
 }
 
 func (s *routineSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+	// Routine grants are emitted principal-side from listRoutineGrants in pkg/connector/grants.go.
+	// The SDK writes grants additively via PutGrants (pkg/sync/ledger_grants.go in the SDK) over the
+	// union of all syncer output, so leaving this syncer-side stub empty mirrors the established
+	// empty stubs on tableSyncer, databaseSyncer, and columnSyncer.
 	return nil, "", nil, nil
 }
 
@@ -69,8 +77,8 @@ func newRoutineSyncer(c *client.Client) *routineSyncer {
 	}
 }
 func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("can only grant routine permissions to users")
+	if !routinePrincipalAllowed(principal.Id.ResourceType, s.client.IsVersion8()) {
+		return nil, fmt.Errorf("can only grant routine permissions to users (and roles on MySQL 8+)")
 	}
 
 	parts := strings.Split(entitlement.Id, ":")
@@ -86,14 +94,9 @@ func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entit
 		return nil, fmt.Errorf("unsupported resource kind in entitlement ID: %s", entitlement.Id)
 	}
 
-	var privilege string
-	switch strings.ToLower(rawPrivilege) {
-	case "execute":
-		privilege = "EXECUTE"
-	case "alter_routine":
-		privilege = "ALTER ROUTINE"
-	default:
-		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+	privilege, err := routinePrivilege(rawPrivilege)
+	if err != nil {
+		return nil, err
 	}
 
 	schemaRoutine := strings.Split(fullRoutineName, ".")
@@ -110,7 +113,104 @@ func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entit
 
 	err = s.client.GrantRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	if err != nil {
+		// Idempotency: MySQL does not have a uniform error code for "grant already exists"
+		// across versions, so detect it from the error string (case-insensitive).
+		if strings.Contains(strings.ToLower(err.Error()), "already exists") {
+			anno, aErr := anypb.New(&v2.GrantAlreadyExists{})
+			if aErr != nil {
+				return nil, fmt.Errorf("baton-mysql: failed to build GrantAlreadyExists annotation: %w", aErr)
+			}
+			return annotations.Annotations{anno}, nil
+		}
 		return nil, fmt.Errorf("failed to grant %s on %s.%s to %s: %w", privilege, schema, routineName, user, err)
+	}
+
+	return nil, nil
+}
+
+// routinePrivilege maps a raw routine entitlement privilege slug to the SQL privilege.
+// Used only by the Grant path. The Revoke path never reaches this for `grant` (R1).
+func routinePrivilege(rawPrivilege string) (string, error) {
+	switch strings.ToLower(rawPrivilege) {
+	case "execute":
+		return "EXECUTE", nil
+	case "alter_routine":
+		return "ALTER ROUTINE", nil
+	case "grant":
+		return "GRANT OPTION", nil
+	default:
+		return "", fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+	}
+}
+
+// routinePrincipalAllowed reports whether the principal resource type may receive routine grants.
+// Users are always allowed; roles only on MySQL 8+ (I6).
+func routinePrincipalAllowed(resourceType string, isVersion8 bool) bool {
+	if resourceType == resourceTypeUser.Id {
+		return true
+	}
+	return isVersion8 && resourceType == resourceTypeRole.Id
+}
+
+// isNoSuchGrantErr reports whether err is MySQL error 1147 ("no such grant defined"),
+// which means the desired end state already holds.
+func isNoSuchGrantErr(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1147
+	}
+	return false
+}
+
+// revokeRoutineGrantOption revokes the grant option on a routine WITHOUT revoking the
+// held privileges themselves (R1): it builds
+// `REVOKE GRANT OPTION FOR <held privs> ON <TYPE> <schema>.<routine> FROM <user>`
+// via Client.RevokeRoutineGrantOption, where <held privs> is derived from the rows of
+// mysql.procs_priv for the principal (R3). If nothing (besides the grant option) is
+// held, or the revoke reports error 1147, the end state already holds and this is a
+// no-op success.
+func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, grant *v2.Grant, schema, routineName, user string) (annotations.Annotations, error) {
+	lookupUser, host, splitErr := client.SplitUserHost(user)
+	if splitErr != nil {
+		return nil, fmt.Errorf("baton-mysql: malformed principal ID %s: %w", grant.Principal.Id.Resource, splitErr)
+	}
+
+	held, err := s.client.ListRoutineGrants(ctx, lookupUser, host)
+	if err != nil {
+		return nil, err
+	}
+
+	privSet := make(map[string]struct{})
+	for _, g := range held {
+		if g.Database != schema || g.RoutineName != routineName {
+			continue
+		}
+		for priv := range g.GetPrivs(ctx) {
+			if strings.ToLower(priv) == "grant" {
+				continue
+			}
+			privSet[strings.ToUpper(strings.ReplaceAll(priv, "_", " "))] = struct{}{}
+		}
+	}
+
+	if len(privSet) == 0 {
+		// Nothing but the grant option is held (or the row is gone): nothing to revoke.
+		return nil, nil
+	}
+
+	privs := make([]string, 0, len(privSet))
+	for p := range privSet {
+		privs = append(privs, p)
+	}
+	sort.Strings(privs)
+	heldPrivs := strings.Join(privs, ", ")
+
+	err = s.client.RevokeRoutineGrantOption(ctx, heldPrivs, schema, routineName, user)
+	if err != nil {
+		if isNoSuchGrantErr(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to revoke grant option on %s.%s from %s: %w", schema, routineName, user, err)
 	}
 
 	return nil, nil
@@ -129,16 +229,6 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 		return nil, fmt.Errorf("unsupported resource kind in entitlement ID: %s", grant.Entitlement.Id)
 	}
 
-	var privilege string
-	switch strings.ToLower(rawPrivilege) {
-	case "execute":
-		privilege = "EXECUTE"
-	case "alter_routine":
-		privilege = "ALTER ROUTINE"
-	default:
-		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
-	}
-
 	schemaRoutine := strings.Split(fullRoutineName, ".")
 	if len(schemaRoutine) != 2 {
 		return nil, fmt.Errorf("invalid routine name, expected schema.name: %s", fullRoutineName)
@@ -151,8 +241,27 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 		return nil, err
 	}
 
+	// R1: the bare `REVOKE GRANT OPTION ON ...` form is forbidden — it revokes held
+	// privileges. Route the `grant` slug through the dedicated grant-option path.
+	if strings.ToLower(rawPrivilege) == "grant" {
+		return s.revokeRoutineGrantOption(ctx, grant, schema, routineName, user)
+	}
+
+	var privilege string
+	switch strings.ToLower(rawPrivilege) {
+	case "execute":
+		privilege = "EXECUTE"
+	case "alter_routine":
+		privilege = "ALTER ROUTINE"
+	default:
+		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+	}
+
 	err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	if err != nil {
+		if isNoSuchGrantErr(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
 	}
 
