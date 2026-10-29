@@ -93,6 +93,10 @@ func grantsForUserOrRole(
 // buildGrant builds the emitted v2.Grant for one entitlement-map key.
 // privResource is "<entitlement-slug>:<resource-id>"; principalID is the
 // synced resource's own (possibly collapsed) ID.
+//
+// privResource must already be a validated "<slug>:<type>:<id>" string —
+// the caller (grantsForUserOrRole) checks the shape before calling;
+// buildGrant does not re-validate.
 func buildGrant(privResource string, principalID *v2.ResourceId) *v2.Grant {
 	entitlementID := fmt.Sprintf("entitlement:%s", privResource)
 	privParts := strings.SplitN(privResource, ":", 2)
@@ -256,6 +260,15 @@ func listColumnGrants(
 func listProxyGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
 	proxyGrants, err := c.ListProxyGrants(ctx, user, host)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			ctxzap.Extract(ctx).Debug(
+				"account not found for proxy grants; skipping",
+				zap.Error(err),
+				zap.String("user", user),
+				zap.String("host", host),
+			)
+			return nil
+		}
 		return fmt.Errorf("baton-mysql: unable to fetch proxy grants for %s@%s: %w", user, host, err)
 	}
 

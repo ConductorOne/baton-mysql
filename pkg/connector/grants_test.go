@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"fmt"
 	"testing"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -69,5 +68,5 @@ func TestBuildGrantCollapsedUsers(t *testing.T) {
 	)
 
 	require.Equal(t, collapsedID, grant.Principal.Id)
-	require.NotContains(t, fmt.Sprintf("%s|%s", grant.Id, grant.Principal.Id.Resource), "user:plain_user@localhost")
+	require.Equal(t, "grant:entitlement:role_assignment:role:ops@team@%:user:plain_user@%,localhost", grant.Id)
 }
