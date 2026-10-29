@@ -155,16 +155,6 @@ func isNoSuchGrantErr(err error) bool {
 	return false
 }
 
-// revokeRoutineGrantOption revokes the grant option on a routine WITHOUT revoking the
-// held privileges themselves (R1): it builds
-// `REVOKE GRANT OPTION ON <TYPE> <schema>.<routine> FROM <user>`
-// via Client.RevokeRoutineGrantOption. MySQL's REVOKE grammar has no
-// `GRANT OPTION FOR` clause (that is PostgreSQL; ER_PARSE_ERROR 1064); GRANT OPTION is
-// a privilege of its own at the routine level, so this single statement clears only the
-// Grant bit of the procs_priv row and leaves EXECUTE/ALTER ROUTINE in place. SQL runs
-// even when nothing else is held: the Grant-only row is exactly the state
-// GrantRoutinePrivilege's `GRANT USAGE ... WITH GRANT OPTION` fallback creates, and
-// skipping it left the row in place so the next sync re-emitted the grant forever.
 // revokePerHosts runs revoke once per host of a (possibly collapsed) principal
 // ("user@h1,h2"): MySQL 8 account-management statements are atomic, so a single
 // REVOKE listing 'u'@'h1', 'u'@'h2' rolls back entirely when one host has no such
@@ -187,6 +177,16 @@ func revokePerHosts(user string, revoke func(account string) error) error {
 	return nil
 }
 
+// revokeRoutineGrantOption revokes the grant option on a routine WITHOUT revoking the
+// held privileges themselves (R1): it builds
+// `REVOKE GRANT OPTION ON <TYPE> <schema>.<routine> FROM <user>`
+// via Client.RevokeRoutineGrantOption. MySQL's REVOKE grammar has no
+// `GRANT OPTION FOR` clause (that is PostgreSQL; ER_PARSE_ERROR 1064); GRANT OPTION is
+// a privilege of its own at the routine level, so this single statement clears only the
+// Grant bit of the procs_priv row and leaves EXECUTE/ALTER ROUTINE in place. SQL runs
+// even when nothing else is held: the Grant-only row is exactly the state
+// GrantRoutinePrivilege's `GRANT USAGE ... WITH GRANT OPTION` fallback creates, and
+// skipping it left the row in place so the next sync re-emitted the grant forever.
 func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, schema, routineName, user string) (annotations.Annotations, error) {
 	if err := revokePerHosts(user, func(account string) error {
 		return s.client.RevokeRoutineGrantOption(ctx, schema, routineName, account)
