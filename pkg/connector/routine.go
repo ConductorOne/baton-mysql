@@ -171,8 +171,8 @@ func isNoSuchGrantErr(err error) bool {
 // `REVOKE GRANT OPTION FOR <held privs> ON <TYPE> <schema>.<routine> FROM <user>`
 // via Client.RevokeRoutineGrantOption, where <held privs> is derived from the rows of
 // mysql.procs_priv for the principal (R3). If nothing (besides the grant option) is
-// held, or the revoke reports error 1147, the end state already holds and this is a
-// no-op success.
+// held, or the revoke reports a no-such-grant error (1147 table-level / 1403
+// routine-level), the end state already holds and this is a no-op success.
 func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, grant *v2.Grant, schema, routineName, user string) (annotations.Annotations, error) {
 	lookupUser, host, splitErr := client.SplitUserHost(user)
 	if splitErr != nil {
