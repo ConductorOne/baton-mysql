@@ -152,12 +152,16 @@ func routinePrincipalAllowed(resourceType string, isVersion8 bool) bool {
 	return isVersion8 && resourceType == resourceTypeRole.Id
 }
 
-// isNoSuchGrantErr reports whether err is MySQL error 1147 ("no such grant defined"),
-// which means the desired end state already holds.
+// isNoSuchGrantErr reports whether err is a MySQL "no such grant defined" error,
+// which means the desired end state already holds. The error number is level-specific:
+// 1147 (ER_NONEXISTING_TABLE_GRANT) is raised at the table level, while routine-level
+// REVOKE raises 1403 (ER_NONEXISTING_PROC_GRANT, sql/auth/sql_authorization.cc
+// mysql_routine_grant -> report_missing_user_grant_message). Both mean the same
+// end-state, so both are treated as already-done.
 func isNoSuchGrantErr(err error) bool {
 	var mysqlErr *mysql.MySQLError
 	if errors.As(err, &mysqlErr) {
-		return mysqlErr.Number == 1147
+		return mysqlErr.Number == 1147 || mysqlErr.Number == 1403
 	}
 	return false
 }

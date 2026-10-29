@@ -20,6 +20,11 @@ func TestIsNoSuchGrantErr(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "mysql error 1403 (routine-level no such grant)",
+			err:  &mysql.MySQLError{Number: 1403},
+			want: true,
+		},
+		{
 			name: "mysql error 1064",
 			err:  &mysql.MySQLError{Number: 1064},
 			want: false,
@@ -27,6 +32,11 @@ func TestIsNoSuchGrantErr(t *testing.T) {
 		{
 			name: "wrapped mysql error 1147",
 			err:  fmt.Errorf("wrapped: %w", &mysql.MySQLError{Number: 1147}),
+			want: true,
+		},
+		{
+			name: "wrapped mysql error 1403",
+			err:  fmt.Errorf("wrapped: %w", &mysql.MySQLError{Number: 1403}),
 			want: true,
 		},
 		{
