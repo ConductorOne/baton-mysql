@@ -82,6 +82,10 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		return fmt.Errorf("invalid user %s: %w", user, err)
 	}
 
+	if isCollapsedAccount(user) && (privilege == privRoleAssignment || privilege == privRoleAssignmentWithGrant) {
+		return c.revokeRolePerVariant(ctx, roleAccount, user)
+	}
+
 	var revokeStmt string
 	switch privilege {
 	case privRoleAssignment, privRoleAssignmentWithGrant:
@@ -90,10 +94,6 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 		revokeStmt = fmt.Sprintf("REVOKE PROXY ON %s FROM %s", roleAccount, userAccount)
 	default:
 		return fmt.Errorf("unknown privilege: %s", privilege)
-	}
-
-	if isCollapsedAccount(user) && (privilege == privRoleAssignment || privilege == privRoleAssignmentWithGrant) {
-		return c.revokeRolePerVariant(ctx, roleAccount, user, privilege)
 	}
 
 	_, err = c.db.ExecContext(ctx, revokeStmt)
@@ -115,7 +115,7 @@ func isCollapsedAccount(account string) bool {
 // held by only some host variants would fail the whole statement. Revoking per
 // variant and tolerating 1147 per variant keeps the revoke idempotent: state already
 // matching the desired state is success. Every other error fails wrapped.
-func (c *Client) revokeRolePerVariant(ctx context.Context, roleAccount, user, privilege string) error {
+func (c *Client) revokeRolePerVariant(ctx context.Context, roleAccount, user string) error {
 	variants, err := splitCollapsedAccount(user)
 	if err != nil {
 		return fmt.Errorf("invalid user %s: %w", user, err)
