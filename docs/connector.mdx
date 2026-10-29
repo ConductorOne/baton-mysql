@@ -56,6 +56,16 @@ The MySQL connector syncs the following resources:
   <Step>
     Grant read access to the privilege tables the connector syncs from. Choose the block that matches your MySQL version.
 
+    <Note>
+      Upgrading an existing install? Routine (procedure/function) grant sync now reads
+      `mysql.procs_priv` directly. The connector account needs
+      `GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO conductorone;`
+      (included in the statements below) before syncing, or every sync fails with an
+      error naming that grant. Without it the connector would see zero routine grants
+      and ConductorOne would delete previously synced routine grants — failing loudly is
+      deliberate.
+    </Note>
+
     **MySQL 5.7:**
 
     ```sql

@@ -269,7 +269,14 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 	var ret []*RoutineGrant
 	err := c.db.SelectContext(ctx, &ret, q, user, host)
 	if err != nil {
-		return nil, fmt.Errorf("baton-mysql: failed to list routine grants from mysql.procs_priv (account %s@%s): %w; connector account needs: GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO <account>", user, host, err)
+		return nil, fmt.Errorf("baton-mysql: failed to list routine grants from mysql.procs_priv (account %s@%s): %w; "+
+			"connector account needs: GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO <account>", user, host, err)
+	}
+
+	// Map Routine_name to the canonical information_schema.ROUTINES case (see
+	// canonicalizeRoutineNames) before building resource IDs.
+	if err := c.canonicalizeRoutineNames(ctx, ret); err != nil {
+		return nil, err
 	}
 
 	for i, r := range ret {
@@ -281,6 +288,62 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 	}
 
 	return ret, nil
+}
+
+// RoutineSchemaRow is one name pair from information_schema.ROUTINES.
+type RoutineSchemaRow struct {
+	Schema string `db:"ROUTINE_SCHEMA"`
+	Name   string `db:"ROUTINE_NAME"`
+}
+
+// CanonicalRoutineMap builds a case-insensitive lookup (schema\x00name, lowercased) ->
+// canonical ROUTINE_NAME. Routine names are case-insensitive in MySQL, while
+// procs_priv.Routine_name keeps whatever case the GRANT statement used, so
+// `GRANT EXECUTE ON PROCEDURE db1.P1` for routine `p1` would otherwise emit grant key
+// `routine:db1.P1` that mismatches the synced resource `routine:db1.p1` (whose ID comes
+// from information_schema). DB-free so it is table-testable.
+func CanonicalRoutineMap(rows []RoutineSchemaRow) map[string]string {
+	canonical := make(map[string]string, len(rows))
+	for _, r := range rows {
+		key := strings.ToLower(r.Schema) + "\x00" + strings.ToLower(r.Name)
+		if _, ok := canonical[key]; !ok {
+			canonical[key] = r.Name
+		}
+	}
+	return canonical
+}
+
+// canonicalizeRoutineNames rewrites each grant row's Routine_name to the canonical
+// information_schema.ROUTINES case so grant keys align with existing routine resource
+// IDs (which are derived from information_schema via ListRoutines). Rows whose routine
+// no longer exists in ROUTINES (an orphaned procs_priv row for a dropped routine) keep
+// the procs_priv case instead of being dropped, so the grant still surfaces — and can
+// be revoked — rather than disappearing silently.
+func (c *Client) canonicalizeRoutineNames(ctx context.Context, grants []*RoutineGrant) error {
+	if len(grants) == 0 {
+		return nil
+	}
+
+	var rows []RoutineSchemaRow
+	err := c.db.SelectContext(ctx, &rows, `SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM information_schema.ROUTINES`)
+	if err != nil {
+		return fmt.Errorf("baton-mysql: failed to read information_schema.ROUTINES to canonicalize routine grant names: %w", err)
+	}
+
+	CanonicalizeRoutineNames(grants, CanonicalRoutineMap(rows))
+	return nil
+}
+
+// CanonicalizeRoutineNames rewrites each grant row's RoutineName to the canonical case
+// using the map built by CanonicalRoutineMap; rows with no ROUTINES entry are left
+// unchanged (see canonicalizeRoutineNames for why they are not dropped). DB-free so it
+// is table-testable.
+func CanonicalizeRoutineNames(grants []*RoutineGrant, canonical map[string]string) {
+	for _, g := range grants {
+		if name, ok := canonical[strings.ToLower(g.Database)+"\x00"+strings.ToLower(g.RoutineName)]; ok {
+			g.RoutineName = name
+		}
+	}
 }
 
 type ProxyGrant struct {

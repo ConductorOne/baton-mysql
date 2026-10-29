@@ -147,9 +147,18 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 	return err
 }
 
-// RevokeRoutineGrantOption revokes the grant option for the given held privileges on a routine.
-// It builds `REVOKE GRANT OPTION FOR <heldPrivileges> ON <TYPE> <schema>.<routine> FROM <user>`.
-func (c *Client) RevokeRoutineGrantOption(ctx context.Context, heldPrivileges string, schema string, routineName string, user string) error {
+// RevokeRoutineGrantOption revokes ONLY the routine-level grant option, keeping any held
+// EXECUTE/ALTER ROUTINE privileges. MySQL's REVOKE grammar (8.0 and 5.7) has no
+// `GRANT OPTION FOR` clause — that is PostgreSQL syntax and fails with ER_PARSE_ERROR
+// (1064). GRANT OPTION is a privilege of its own at the routine level (privileges doc:
+// "GRANT OPTION ... Levels: Global, database, table, routine, proxy"; server grammar
+// sql_yacc.yy priv_item: `| GRANT OPTION` -> PT_static_privilege(GRANT_ACL)), so the
+// supported single-statement form is:
+//
+//	REVOKE GRANT OPTION ON <TYPE> <schema>.<routine> FROM <user>
+//
+// which clears only the Grant bit of the procs_priv row.
+func (c *Client) RevokeRoutineGrantOption(ctx context.Context, schema string, routineName string, user string) error {
 	routineType, err := c.GetRoutineType(ctx, schema, routineName)
 	if err != nil {
 		return err
@@ -169,8 +178,8 @@ func (c *Client) RevokeRoutineGrantOption(ctx context.Context, heldPrivileges st
 		return err
 	}
 
-	query := fmt.Sprintf("REVOKE GRANT OPTION FOR %s ON %s %s.%s FROM %s",
-		heldPrivileges, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
+	query := fmt.Sprintf("REVOKE GRANT OPTION ON %s %s.%s FROM %s",
+		strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
 	_, err = c.db.ExecContext(ctx, query)
 	return err
 }
@@ -215,7 +224,8 @@ func routineTypesFromRows(rows []string, schema, routineName string) (string, er
 		seen[r] = struct{}{}
 	}
 	if len(seen) > 1 {
-		return "", fmt.Errorf("baton-mysql: ambiguous routine name %s.%s resolves to both PROCEDURE and FUNCTION; routine resource IDs do not encode routine type — refusing to grant/revoke the wrong object", schema, routineName)
+		return "", fmt.Errorf("baton-mysql: ambiguous routine name %s.%s resolves to both PROCEDURE and FUNCTION; "+
+			"routine resource IDs do not encode routine type — refusing to grant/revoke the wrong object", schema, routineName)
 	}
 
 	for r := range seen {

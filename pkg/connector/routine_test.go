@@ -54,57 +54,101 @@ func TestIsNoSuchGrantErr(t *testing.T) {
 	}
 }
 
-func TestRoutineHeldPrivs(t *testing.T) {
+func TestCanonicalRoutineMap(t *testing.T) {
 	tests := []struct {
-		name   string
-		grants []*client.RoutineGrant
-		want   []string
+		name string
+		rows []client.RoutineSchemaRow
+		want map[string]string
 	}{
 		{
-			name:   "matching row decodes uppercased with spaces",
-			grants: []*client.RoutineGrant{{Database: "db1", RoutineName: "p1", Privs: "Execute,Alter Routine,Grant"}},
-			want:   []string{"ALTER ROUTINE", "EXECUTE"},
-		},
-		{
-			name: "grant-only row yields empty",
-			grants: []*client.RoutineGrant{
-				{Database: "db1", RoutineName: "p1", Privs: "Grant"},
+			name: "canonical case wins over procs_priv case",
+			rows: []client.RoutineSchemaRow{
+				{Schema: "db1", Name: "p1"},
+				{Schema: "db1", Name: "P2"},
 			},
-			want: []string{},
-		},
-		{
-			name: "non-matching schema or routine ignored",
-			grants: []*client.RoutineGrant{
-				{Database: "other", RoutineName: "p1", Privs: "Execute"},
-				{Database: "db1", RoutineName: "other", Privs: "Execute"},
+			want: map[string]string{
+				"db1\x00p1": "p1",
+				"db1\x00p2": "P2",
 			},
-			want: []string{},
 		},
 		{
-			name: "collapsed rows union with dedupe",
-			grants: []*client.RoutineGrant{
-				{Database: "db1", RoutineName: "p1", Privs: "Execute"},
-				{Database: "db1", RoutineName: "p1", Privs: "Execute,Grant"},
+			name: "lookup is case-insensitive on schema and name",
+			rows: []client.RoutineSchemaRow{{Schema: "Db1", Name: "P1"}},
+			want: map[string]string{"db1\x00p1": "P1"},
+		},
+		{
+			name: "same routine name in two schemas kept apart",
+			rows: []client.RoutineSchemaRow{
+				{Schema: "db1", Name: "p1"},
+				{Schema: "db2", Name: "P1"},
 			},
-			want: []string{"EXECUTE"},
-		},
-		{
-			name: "sorted deterministically",
-			grants: []*client.RoutineGrant{
-				{Database: "db1", RoutineName: "p1", Privs: "Alter Routine,Execute"},
+			want: map[string]string{
+				"db1\x00p1": "p1",
+				"db2\x00p1": "P1",
 			},
-			want: []string{"ALTER ROUTINE", "EXECUTE"},
 		},
 		{
-			name:   "no rows yields empty",
-			grants: nil,
-			want:   []string{},
+			name: "no rows yields empty map",
+			rows: nil,
+			want: map[string]string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, routineHeldPrivs(tt.grants, "db1", "p1"))
+			require.Equal(t, tt.want, client.CanonicalRoutineMap(tt.rows))
+		})
+	}
+}
+
+func TestCanonicalizeRoutineNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		grants    []*client.RoutineGrant
+		rows      []client.RoutineSchemaRow
+		wantNames []string
+	}{
+		{
+			name: "grant key case matches the synced resource",
+			grants: []*client.RoutineGrant{
+				{Database: "db1", RoutineName: "P1", Privs: "Execute"},
+			},
+			rows:      []client.RoutineSchemaRow{{Schema: "db1", Name: "p1"}},
+			wantNames: []string{"p1"},
+		},
+		{
+			name: "schema case mismatch also canonicalizes",
+			grants: []*client.RoutineGrant{
+				{Database: "DB1", RoutineName: "p1", Privs: "Execute"},
+			},
+			rows:      []client.RoutineSchemaRow{{Schema: "db1", Name: "P1"}},
+			wantNames: []string{"P1"},
+		},
+		{
+			name: "orphaned row for a dropped routine keeps procs_priv case",
+			grants: []*client.RoutineGrant{
+				{Database: "db1", RoutineName: "GONE", Privs: "Execute"},
+			},
+			rows:      []client.RoutineSchemaRow{{Schema: "db1", Name: "p1"}},
+			wantNames: []string{"GONE"},
+		},
+		{
+			name:      "no grants is a no-op",
+			grants:    nil,
+			rows:      []client.RoutineSchemaRow{{Schema: "db1", Name: "p1"}},
+			wantNames: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			canonical := client.CanonicalRoutineMap(tt.rows)
+			client.CanonicalizeRoutineNames(tt.grants, canonical)
+			var got []string
+			for _, g := range tt.grants {
+				got = append(got, g.RoutineName)
+			}
+			require.Equal(t, tt.wantNames, got)
 		})
 	}
 }
