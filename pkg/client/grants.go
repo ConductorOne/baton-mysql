@@ -318,14 +318,35 @@ func CanonicalRoutineMap(rows []RoutineSchemaRow) map[string]string {
 // IDs (which are derived from information_schema via ListRoutines). Rows whose routine
 // no longer exists in ROUTINES (an orphaned procs_priv row for a dropped routine) keep
 // the procs_priv case instead of being dropped, so the grant still surfaces — and can
-// be revoked — rather than disappearing silently.
+// be revoked — rather than disappearing silently. The ROUTINES query is bounded to
+// the distinct schemas present in the grant rows: ListRoutineGrants runs
+// once per host per principal, so an unbounded scan of information_schema.ROUTINES
+// would cost principals × routines rows.
 func (c *Client) canonicalizeRoutineNames(ctx context.Context, grants []*RoutineGrant) error {
 	if len(grants) == 0 {
 		return nil
 	}
 
+	schemas := make([]string, 0, len(grants))
+	seen := make(map[string]struct{}, len(grants))
+	for _, g := range grants {
+		key := strings.ToLower(g.Database)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		schemas = append(schemas, g.Database)
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?, ", len(schemas)), ", ")
+	args := make([]interface{}, 0, len(schemas))
+	for _, s := range schemas {
+		args = append(args, s)
+	}
+
 	var rows []RoutineSchemaRow
-	err := c.db.SelectContext(ctx, &rows, `SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM information_schema.ROUTINES`)
+	err := c.db.SelectContext(ctx, &rows,
+		`SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA IN (`+placeholders+`)`,
+		args...)
 	if err != nil {
 		return fmt.Errorf("baton-mysql: failed to read information_schema.ROUTINES to canonicalize routine grant names: %w", err)
 	}

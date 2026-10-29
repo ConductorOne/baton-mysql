@@ -177,7 +177,7 @@ func isNoSuchGrantErr(err error) bool {
 // skipping it left the row in place so the next sync re-emitted the grant forever. When
 // no such grant exists the server raises 1403 (routine-level no-such-grant), which is
 // treated as already-done (isNoSuchGrantErr).
-func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, grant *v2.Grant, schema, routineName, user string) (annotations.Annotations, error) {
+func (s *routineSyncer) revokeRoutineGrantOption(ctx context.Context, schema, routineName, user string) (annotations.Annotations, error) {
 	if err := s.client.RevokeRoutineGrantOption(ctx, schema, routineName, user); err != nil {
 		if isNoSuchGrantErr(err) {
 			return nil, nil
@@ -219,7 +219,7 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 	// `REVOKE GRANT OPTION ON ...` is a privilege of its own and clears only the Grant bit
 	// of the procs_priv row, leaving EXECUTE/ALTER ROUTINE in place.
 	if strings.ToLower(rawPrivilege) == "grant" {
-		return s.revokeRoutineGrantOption(ctx, grant, schema, routineName, user)
+		return s.revokeRoutineGrantOption(ctx, schema, routineName, user)
 	}
 
 	var privilege string
