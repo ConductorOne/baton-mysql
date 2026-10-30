@@ -39,13 +39,17 @@ func (c *Client) ExecContext(ctx context.Context, query string) (sql.Result, err
 	return c.db.ExecContext(ctx, query)
 }
 
-func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string) error {
+func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string, withGrant bool) error {
 	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
 	query := fmt.Sprintf("GRANT %s ON *.* TO %s", strings.ToUpper(privilege), userGrant)
+	// WITH GRANT OPTION must trail the TO clause in MySQL grammar.
+	if withGrant {
+		query += " WITH GRANT OPTION"
+	}
 	_, err = c.db.ExecContext(ctx, query)
 	return err
 }

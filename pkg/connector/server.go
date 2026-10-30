@@ -80,7 +80,7 @@ func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 		return nil, err
 	}
 
-	err = s.client.GrantServerPrivilege(ctx, userStr, grantPrivilegeString(privilege, withGrant))
+	err = s.client.GrantServerPrivilege(ctx, userStr, privilege, withGrant)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}

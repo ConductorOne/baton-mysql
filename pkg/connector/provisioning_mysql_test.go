@@ -93,7 +93,15 @@ func TestProvisioningLive(t *testing.T) {
 	require.NoError(t, err)
 	grants = showGrants(t, ctx, db)
 	require.True(t, grantsContain(grants, "BACKUP_ADMIN"), "grants: %v", grants)
-	require.True(t, grantsContain(grants, "WITH GRANT OPTION"), "grants: %v", grants)
+	// MySQL grammar: WITH GRANT OPTION trails the TO clause, at the end of the SHOW GRANTS line.
+	var grantLine string
+	for _, g := range grants {
+		if strings.Contains(g, "BACKUP_ADMIN") {
+			grantLine = g
+		}
+	}
+	require.NotEmpty(t, grantLine, "grants: %v", grants)
+	require.True(t, strings.HasSuffix(strings.TrimSpace(grantLine), "WITH GRANT OPTION"), "grants: %v", grants)
 
 	_, err = s.Revoke(ctx, grant("entitlement:backup_admin_with_grant:server:srv1", principal))
 	require.NoError(t, err)

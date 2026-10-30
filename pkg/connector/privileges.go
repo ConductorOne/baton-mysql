@@ -2,6 +2,7 @@ package connector
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -82,8 +83,26 @@ func trimWithGrantSuffix(slug string) (string, bool) {
 	return lowered, withGrant
 }
 
+// grantPrivilegeString embeds the WITH GRANT OPTION clause into the privilege
+// slot for database/table scope. Server scope must NOT use this: MySQL grammar
+// requires WITH GRANT OPTION to trail the TO clause (see client.GrantServerPrivilege).
+func grantPrivilegeString(sqlName string, withGrant bool) string {
+	if withGrant {
+		return sqlName + " WITH GRANT OPTION"
+	}
+	return sqlName
+}
+
+// baseSlugRe validates the base slug charset: slugs are lower-case snake per
+// the entitlement catalog, so fail closed on anything else (e.g. underscore-free garbage).
+var baseSlugRe = regexp.MustCompile(`^[a-z_]+$`)
+
 func sqlPrivilegeName(slug string) (string, bool, error) {
 	base, withGrant := trimWithGrantSuffix(strings.ToLower(slug))
+
+	if !baseSlugRe.MatchString(base) {
+		return "", false, status.Errorf(codes.InvalidArgument, "baton-mysql: unrecognized privilege %q", slug)
+	}
 
 	if sql, ok := staticPrivilegeSQL[base]; ok {
 		return sql, withGrant, nil
@@ -99,13 +118,6 @@ func sqlPrivilegeName(slug string) (string, bool, error) {
 		return "", false, status.Errorf(codes.InvalidArgument, "baton-mysql: unrecognized privilege %q", slug)
 	}
 	return strings.ToUpper(base), withGrant, nil
-}
-
-func grantPrivilegeString(sqlName string, withGrant bool) string {
-	if withGrant {
-		return sqlName + " WITH GRANT OPTION"
-	}
-	return sqlName
 }
 
 func resolveServerPrivilege(entitlementID string) (string, bool, error) {

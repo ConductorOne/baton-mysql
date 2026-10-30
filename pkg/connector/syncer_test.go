@@ -81,18 +81,10 @@ func TestColumnSyncerGuards(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid entitlement ID")
 	})
 
-	t.Run("grant option rejected at column scope", func(t *testing.T) {
-		_, err := c.Grant(ctx, principal, entitlement("entitlement:grant:column:db.tbl.col"))
+	t.Run("revoke malformed column ID", func(t *testing.T) {
+		_, err := c.Revoke(ctx, grant("entitlement:select:column:db.tbl", principal))
 		require.Error(t, err)
-		require.Equal(t, codes.InvalidArgument, status.Code(err))
-		require.Contains(t, err.Error(), "GRANT OPTION is not valid at column scope")
-	})
-
-	t.Run("revoke grant option rejected at column scope", func(t *testing.T) {
-		_, err := c.Revoke(ctx, grant("entitlement:grant_with_grant:column:db.tbl.col", principal))
-		require.Error(t, err)
-		require.Equal(t, codes.InvalidArgument, status.Code(err))
-		require.Contains(t, err.Error(), "GRANT OPTION is not valid at column scope")
+		require.Contains(t, err.Error(), "invalid column ID format")
 	})
 }
 

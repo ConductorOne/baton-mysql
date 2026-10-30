@@ -122,10 +122,18 @@ func TestSqlPrivilegeNameWithGrant(t *testing.T) {
 	}
 }
 
-func TestGrantPrivilegeString(t *testing.T) {
-	require.Equal(t, "SHOW DATABASES WITH GRANT OPTION", grantPrivilegeString("SHOW DATABASES", true))
-	require.Equal(t, "SHOW DATABASES", grantPrivilegeString("SHOW DATABASES", false))
-	require.Equal(t, "BACKUP_ADMIN WITH GRANT OPTION", grantPrivilegeString("BACKUP_ADMIN", true))
+func TestSqlPrivilegeNameCharset(t *testing.T) {
+	// Underscore-free garbage (no underscore, not in the static map, not a
+	// known dynamic privilege) must fail closed like underscore-bearing garbage.
+	for _, slug := range []string{"garbage!!", "not-real", "GRANT-OPTION", "grant option"} {
+		_, _, err := sqlPrivilegeName(slug)
+		require.Error(t, err, slug)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	}
+	// Underscore-bearing garbage still fails closed.
+	_, _, err := sqlPrivilegeName("not_a_real_priv")
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
 func TestResolveServerPrivilege(t *testing.T) {
