@@ -79,14 +79,26 @@ func newDatabaseSyncer(c *client.Client, skipDbs map[string]struct{}) *databaseS
 }
 
 func (s *databaseSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	privilege, database := extractDatabasePrivilegeAndDb(entitlement.Id)
+	parts := strings.Split(entitlement.Id, ":")
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("baton-mysql: invalid entitlement ID: %s", entitlement.Id)
+	}
+	privilege, withGrant, err := sqlPrivilegeName(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	database := parts[3]
 
 	userStr, err := principalAccount(principal.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.client.GrantDatabasePrivilege(ctx, database, userStr, privilege)
+	grant, err := grantPrivilegeString(privilege, withGrant)
+	if err != nil {
+		return nil, err
+	}
+	err = s.client.GrantDatabasePrivilege(ctx, database, userStr, grant)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}
@@ -95,7 +107,15 @@ func (s *databaseSyncer) Grant(ctx context.Context, principal *v2.Resource, enti
 }
 
 func (s *databaseSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	privilege, database := extractDatabasePrivilegeAndDb(grant.Entitlement.Id)
+	parts := strings.Split(grant.Entitlement.Id, ":")
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("baton-mysql: invalid entitlement ID: %s", grant.Entitlement.Id)
+	}
+	privilege, _, err := sqlPrivilegeName(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	database := parts[3]
 
 	userStr, err := principalAccount(grant.Principal.Id)
 	if err != nil {
@@ -108,17 +128,4 @@ func (s *databaseSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotatio
 	}
 
 	return nil, nil
-}
-
-func extractDatabasePrivilegeAndDb(entitlementID string) (string, string) {
-	parts := strings.Split(entitlementID, ":")
-	if len(parts) < 4 {
-		return "", ""
-	}
-
-	privilegePart := parts[1]
-	database := parts[3]
-	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_", " "))
-
-	return priv, database
 }
