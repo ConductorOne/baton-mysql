@@ -72,13 +72,13 @@ func (s *columnSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 
 	parts := strings.Split(entitlement.Id, ":")
 	if len(parts) != 4 {
-		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
+		return nil, fmt.Errorf("baton-mysql: invalid entitlement ID: %s", entitlement.Id)
 	}
 	privilege := parts[1]
 
 	columnParts := strings.Split(parts[3], ".")
 	if len(columnParts) != 3 {
-		return nil, fmt.Errorf("invalid column ID format: %s", parts[3])
+		return nil, fmt.Errorf("baton-mysql: invalid column ID format: %s", parts[3])
 	}
 	tableName := fmt.Sprintf("%s.%s", columnParts[0], columnParts[1])
 	columnName := columnParts[2]

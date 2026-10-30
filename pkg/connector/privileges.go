@@ -99,6 +99,16 @@ func grantPrivilegeString(sqlName string, withGrant bool) (string, error) {
 // the entitlement catalog, so fail closed on anything else (e.g. underscore-free garbage).
 var baseSlugRe = regexp.MustCompile(`^[a-z_]+$`)
 
+// privilegeSpellingOverrides corrects slugs whose spelling differs from
+// MySQL's privilege name. The catalog slug "nbd_stored_user" is transposed
+// but slugs are a frozen stable API (BUGBOT), so the mapper corrects the SQL
+// spelling to MySQL's NDB_STORED_USER; sync also emits the DB's own
+// lowercased spelling ("ndb_stored_user") from mysql.global_grants.
+var privilegeSpellingOverrides = map[string]string{
+	"nbd_stored_user": "NDB_STORED_USER",
+	"ndb_stored_user": "NDB_STORED_USER",
+}
+
 func sqlPrivilegeName(slug string) (string, bool, error) {
 	base, withGrant := trimWithGrantSuffix(strings.ToLower(slug))
 
@@ -106,6 +116,9 @@ func sqlPrivilegeName(slug string) (string, bool, error) {
 		return "", false, status.Errorf(codes.InvalidArgument, "baton-mysql: unrecognized privilege %q", slug)
 	}
 
+	if sql, ok := privilegeSpellingOverrides[base]; ok {
+		return sql, withGrant, nil
+	}
 	if sql, ok := staticPrivilegeSQL[base]; ok {
 		return sql, withGrant, nil
 	}

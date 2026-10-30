@@ -52,6 +52,11 @@ func TestSqlPrivilegeName(t *testing.T) {
 		{slug: "show_databases", want: "SHOW DATABASES"},
 		{slug: "show_view", want: "SHOW VIEW"},
 		{slug: "grant", want: "GRANT OPTION"},
+		// Both spellings of the NDB stored-user privilege map to MySQL's
+		// NDB_STORED_USER: the transposed catalog slug and the DB's own
+		// lowercased spelling sync emits on revoke.
+		{slug: "nbd_stored_user", want: "NDB_STORED_USER"},
+		{slug: "ndb_stored_user", want: "NDB_STORED_USER"},
 	} {
 		t.Run(tt.slug, func(t *testing.T) {
 			name, withGrant, err := sqlPrivilegeName(tt.slug)
@@ -77,11 +82,15 @@ func TestSqlPrivilegeName(t *testing.T) {
 	}
 
 	for slug := range dynamicPrivileges {
+		want := strings.ToUpper(slug)
+		if sql, ok := privilegeSpellingOverrides[slug]; ok {
+			want = sql
+		}
 		t.Run(slug, func(t *testing.T) {
 			name, withGrant, err := sqlPrivilegeName(slug)
 			require.NoError(t, err)
 			require.False(t, withGrant)
-			require.Equal(t, strings.ToUpper(slug), name)
+			require.Equal(t, want, name)
 		})
 	}
 
@@ -112,6 +121,7 @@ func TestSqlPrivilegeNameWithGrant(t *testing.T) {
 		{slug: "show_databases_with_grant", wantSQL: "SHOW DATABASES", wantGrant: true},
 		{slug: "backup_admin_with_grant", wantSQL: "BACKUP_ADMIN", wantGrant: true},
 		{slug: "SELECT_with_GRANT", wantSQL: "SELECT", wantGrant: true},
+		{slug: "nbd_stored_user_with_grant", wantSQL: "NDB_STORED_USER", wantGrant: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.slug, func(t *testing.T) {
@@ -147,6 +157,14 @@ func TestResolveServerPrivilege(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, withGrant)
 	require.Equal(t, "BACKUP_ADMIN", name)
+
+	// The transposed catalog slug with _with_grant must keep its withGrant
+	// flag (the server grant path composes the trailing clause) while the
+	// mapper corrects the SQL spelling.
+	name, withGrant, err = resolveServerPrivilege("entitlement:nbd_stored_user_with_grant:server:srv1")
+	require.NoError(t, err)
+	require.True(t, withGrant)
+	require.Equal(t, "NDB_STORED_USER", name)
 
 	_, _, err = resolveServerPrivilege("entitlement:proxy:server:srv1")
 	require.Error(t, err)

@@ -27,6 +27,10 @@ func TestCatalogExhaustiveness(t *testing.T) {
 					require.NoError(t, err)
 					require.NotEmpty(t, name)
 					require.Equal(t, strings.HasSuffix(id, "_with_grant"), withGrant)
+					if base == "nbd_stored_user" {
+						// The catalog slug is transposed; the mapper must correct it to MySQL's spelling.
+						require.Equal(t, "NDB_STORED_USER", name)
+					}
 				case resourceTypeDatabase.Id:
 					base, _ := trimWithGrantSuffix(id)
 					name, withGrant, err := sqlPrivilegeName(id)
@@ -61,6 +65,8 @@ func TestCatalogExhaustiveness(t *testing.T) {
 						roleAssignmentPriv,
 						roleAssignmentWithGrantPriv,
 					}, id)
+				default:
+					t.Errorf("unclassified resource type %q", rtID)
 				}
 			})
 		}
