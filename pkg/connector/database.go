@@ -94,7 +94,11 @@ func (s *databaseSyncer) Grant(ctx context.Context, principal *v2.Resource, enti
 		return nil, err
 	}
 
-	err = s.client.GrantDatabasePrivilege(ctx, database, userStr, grantPrivilegeString(privilege, withGrant))
+	grant, err := grantPrivilegeString(privilege, withGrant)
+	if err != nil {
+		return nil, err
+	}
+	err = s.client.GrantDatabasePrivilege(ctx, database, userStr, grant)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}

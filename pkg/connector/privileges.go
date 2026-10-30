@@ -83,14 +83,16 @@ func trimWithGrantSuffix(slug string) (string, bool) {
 	return lowered, withGrant
 }
 
-// grantPrivilegeString embeds the WITH GRANT OPTION clause into the privilege
-// slot for database/table scope. Server scope must NOT use this: MySQL grammar
-// requires WITH GRANT OPTION to trail the TO clause (see client.GrantServerPrivilege).
-func grantPrivilegeString(sqlName string, withGrant bool) string {
+// grantPrivilegeString fails closed when withGrant is set at database/table
+// scope: MySQL grammar requires WITH GRANT OPTION to trail the TO clause, which
+// GrantDatabasePrivilege/GrantTablePrivilege do not support, and no catalog
+// *_with_grant entitlement exists at these scopes (includeWithGrant is
+// server-only). Server-scope WITH GRANT OPTION is handled by client.GrantServerPrivilege.
+func grantPrivilegeString(sqlName string, withGrant bool) (string, error) {
 	if withGrant {
-		return sqlName + " WITH GRANT OPTION"
+		return "", status.Errorf(codes.InvalidArgument, "baton-mysql: WITH GRANT OPTION is not supported at database or table scope")
 	}
-	return sqlName
+	return sqlName, nil
 }
 
 // baseSlugRe validates the base slug charset: slugs are lower-case snake per

@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -164,4 +165,35 @@ func TestResolveServerPrivilege(t *testing.T) {
 	_, _, err = resolveServerPrivilege("entitlement:not_a_real_priv:server:x")
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestGrantPrivilegeStringRejectsWithGrant(t *testing.T) {
+	// WITH GRANT OPTION at database/table scope builds invalid MySQL grammar
+	// (the clause must trail the TO clause); no catalog *_with_grant
+	// entitlement exists at these scopes, so fail closed instead.
+	_, err := grantPrivilegeString("SELECT", true)
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "WITH GRANT OPTION is not supported at database or table scope")
+
+	sql, err := grantPrivilegeString("SELECT", false)
+	require.NoError(t, err)
+	require.Equal(t, "SELECT", sql)
+}
+
+func TestDatabaseTableSyncerWithGrantRejected(t *testing.T) {
+	ctx := context.Background()
+	user := userPrincipal("user:alice@localhost")
+
+	db := newDatabaseSyncer(nil, map[string]struct{}{})
+	_, err := db.Grant(ctx, user, entitlement("entitlement:select_with_grant:database:db1"))
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "WITH GRANT OPTION is not supported at database or table scope")
+
+	ts := newTableSyncer(nil, map[string]struct{}{})
+	_, err = ts.Grant(ctx, user, entitlement("entitlement:select_with_grant:table:db1.tbl1"))
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "WITH GRANT OPTION is not supported at database or table scope")
 }

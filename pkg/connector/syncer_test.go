@@ -86,6 +86,12 @@ func TestColumnSyncerGuards(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid column ID format")
 	})
+
+	t.Run("grant malformed column ID", func(t *testing.T) {
+		_, err := c.Grant(ctx, principal, entitlement("entitlement:select:column:db.tbl"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid column ID format")
+	})
 }
 
 func TestTableSyncerGuards(t *testing.T) {

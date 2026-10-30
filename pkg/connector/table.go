@@ -96,7 +96,11 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 		return nil, err
 	}
 
-	err = s.client.GrantTablePrivilege(ctx, tableID, user, grantPrivilegeString(privilege, withGrant))
+	grant, err := grantPrivilegeString(privilege, withGrant)
+	if err != nil {
+		return nil, err
+	}
+	err = s.client.GrantTablePrivilege(ctx, tableID, user, grant)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on %s to %s: %w", privilege, tableID, principal.Id.Resource, err)
 	}
