@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -71,6 +74,12 @@ func (s *columnSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 	}
 
 	parts := strings.Split(entitlement.Id, ":")
+	if len(parts) != 4 {
+		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
+	}
+	if base, _ := trimWithGrantSuffix(parts[1]); base == "grant" {
+		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: GRANT OPTION is not valid at column scope in MySQL")
+	}
 	privilege := parts[1]
 
 	columnParts := strings.Split(parts[3], ".")
@@ -94,6 +103,9 @@ func (s *columnSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	parts := strings.Split(grant.Entitlement.Id, ":")
 	if len(parts) != 4 {
 		return nil, fmt.Errorf("invalid entitlement ID: %s", grant.Entitlement.Id)
+	}
+	if base, _ := trimWithGrantSuffix(parts[1]); base == "grant" {
+		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: GRANT OPTION is not valid at column scope in MySQL")
 	}
 	privilege := parts[1]
 	columnID := parts[3]

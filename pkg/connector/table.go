@@ -85,7 +85,10 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 	if len(parts) != 4 {
 		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
 	}
-	privilege := parts[1]
+	privilege, withGrant, err := sqlPrivilegeName(parts[1])
+	if err != nil {
+		return nil, err
+	}
 	tableID := parts[3]
 
 	user, err := principalAccount(principal.Id)
@@ -93,7 +96,7 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 		return nil, err
 	}
 
-	err = s.client.GrantTablePrivilege(ctx, tableID, user, privilege)
+	err = s.client.GrantTablePrivilege(ctx, tableID, user, grantPrivilegeString(privilege, withGrant))
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on %s to %s: %w", privilege, tableID, principal.Id.Resource, err)
 	}
@@ -106,7 +109,10 @@ func (s *tableSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.
 	if len(parts) != 4 {
 		return nil, fmt.Errorf("invalid entitlement ID: %s", grant.Entitlement.Id)
 	}
-	privilege := parts[1]
+	privilege, _, err := sqlPrivilegeName(parts[1])
+	if err != nil {
+		return nil, err
+	}
 	tableID := parts[3]
 
 	user, err := principalAccount(grant.Principal.Id)
