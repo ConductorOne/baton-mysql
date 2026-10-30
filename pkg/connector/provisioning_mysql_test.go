@@ -46,9 +46,9 @@ func liveTestUser(t *testing.T, c *client.Client) *v2.Resource {
 	return &v2.Resource{Id: &v2.ResourceId{ResourceType: resourceTypeUser.Id, Resource: "user:baton_prov_test@%"}}
 }
 
-func showGrants(t *testing.T, db *sql.DB) []string {
+func showGrants(t *testing.T, ctx context.Context, db *sql.DB) []string {
 	t.Helper()
-	rows, err := db.Query("SHOW GRANTS FOR 'baton_prov_test'@'%'")
+	rows, err := db.QueryContext(ctx, "SHOW GRANTS FOR 'baton_prov_test'@'%'")
 	require.NoError(t, err)
 	defer rows.Close()
 
@@ -80,24 +80,24 @@ func TestProvisioningLive(t *testing.T) {
 	// Static privilege at server scope round-trips.
 	_, err := s.Grant(ctx, principal, entitlement("entitlement:show_databases:server:srv1"))
 	require.NoError(t, err)
-	grants := showGrants(t, db)
+	grants := showGrants(t, ctx, db)
 	require.True(t, grantsContain(grants, "SHOW DATABASES"), "grants: %v", grants)
 
 	_, err = s.Revoke(ctx, grant("entitlement:show_databases:server:srv1", principal))
 	require.NoError(t, err)
-	grants = showGrants(t, db)
+	grants = showGrants(t, ctx, db)
 	require.False(t, grantsContain(grants, "SHOW DATABASES"), "grants: %v", grants)
 
 	// Dynamic privilege with grant option round-trips.
 	_, err = s.Grant(ctx, principal, entitlement("entitlement:backup_admin_with_grant:server:srv1"))
 	require.NoError(t, err)
-	grants = showGrants(t, db)
+	grants = showGrants(t, ctx, db)
 	require.True(t, grantsContain(grants, "BACKUP_ADMIN"), "grants: %v", grants)
 	require.True(t, grantsContain(grants, "WITH GRANT OPTION"), "grants: %v", grants)
 
 	_, err = s.Revoke(ctx, grant("entitlement:backup_admin_with_grant:server:srv1", principal))
 	require.NoError(t, err)
-	grants = showGrants(t, db)
+	grants = showGrants(t, ctx, db)
 	require.False(t, grantsContain(grants, "BACKUP_ADMIN"), "grants: %v", grants)
 
 	// Table scope round-trips with the exact SQL name.
@@ -108,20 +108,20 @@ func TestProvisioningLive(t *testing.T) {
 	ts := newTableSyncer(c, map[string]struct{}{})
 	_, err = ts.Grant(ctx, principal, entitlement("entitlement:create_view:table:testdb.prov_test_tbl"))
 	require.NoError(t, err)
-	grants = showGrants(t, db)
+	grants = showGrants(t, ctx, db)
 	require.True(t, grantsContain(grants, "CREATE VIEW"), "grants: %v", grants)
 	require.True(t, grantsContain(grants, "prov_test_tbl"), "grants: %v", grants)
 
 	_, err = ts.Revoke(ctx, grant("entitlement:create_view:table:testdb.prov_test_tbl", principal))
 	require.NoError(t, err)
-	grants = showGrants(t, db)
+	grants = showGrants(t, ctx, db)
 	require.False(t, grantsContain(grants, "CREATE VIEW"), "grants: %v", grants)
 
 	// Grant option at database scope emits GRANT OPTION, never GRANT GRANT.
 	ds := newDatabaseSyncer(c, map[string]struct{}{})
 	_, err = ds.Grant(ctx, principal, entitlement("entitlement:grant:database:db1"))
 	require.NoError(t, err)
-	grants = showGrants(t, db)
+	grants = showGrants(t, ctx, db)
 	require.True(t, grantsContain(grants, "GRANT OPTION"), "grants: %v", grants)
 	for _, g := range grants {
 		require.NotContains(t, g, "GRANT GRANT")

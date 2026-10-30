@@ -64,7 +64,7 @@ func routinePrivilege(rawPrivilege string) (string, error) {
 		return "EXECUTE", nil
 	case "alter_routine":
 		return "ALTER ROUTINE", nil
-	case "grant":
+	case grantOptionSlug:
 		return "GRANT OPTION", nil
 	default:
 		return "", fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)

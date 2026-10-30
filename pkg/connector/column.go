@@ -77,7 +77,7 @@ func (s *columnSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 	if len(parts) != 4 {
 		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
 	}
-	if base, _ := trimWithGrantSuffix(parts[1]); base == "grant" {
+	if base, _ := trimWithGrantSuffix(parts[1]); base == grantOptionSlug {
 		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: GRANT OPTION is not valid at column scope in MySQL")
 	}
 	privilege := parts[1]
@@ -104,7 +104,7 @@ func (s *columnSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	if len(parts) != 4 {
 		return nil, fmt.Errorf("invalid entitlement ID: %s", grant.Entitlement.Id)
 	}
-	if base, _ := trimWithGrantSuffix(parts[1]); base == "grant" {
+	if base, _ := trimWithGrantSuffix(parts[1]); base == grantOptionSlug {
 		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: GRANT OPTION is not valid at column scope in MySQL")
 	}
 	privilege := parts[1]

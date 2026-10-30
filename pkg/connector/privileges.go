@@ -9,6 +9,8 @@ import (
 )
 
 // Multi-word static privilege names as MySQL expects them in GRANT/REVOKE.
+const grantOptionSlug = "grant"
+
 var staticPrivilegeSQL = map[string]string{
 	"alter_routine":           "ALTER ROUTINE",
 	"create_role":             "CREATE ROLE",
@@ -23,7 +25,7 @@ var staticPrivilegeSQL = map[string]string{
 	"replication_slave":       "REPLICATION SLAVE",
 	"show_databases":          "SHOW DATABASES",
 	"show_view":               "SHOW VIEW",
-	"grant":                   "GRANT OPTION",
+	grantOptionSlug:           "GRANT OPTION",
 }
 
 // MySQL dynamic privileges are registered with underscores and are not translated.
@@ -70,22 +72,25 @@ var dynamicPrivileges = map[string]struct{}{
 	"xa_recover_admin":             {},
 }
 
-func trimWithGrantSuffix(slug string) (base string, withGrant bool) {
+func trimWithGrantSuffix(slug string) (string, bool) {
 	lowered := strings.ToLower(slug)
-	withGrant = strings.HasSuffix(lowered, "_with_grant")
+	withGrant := strings.HasSuffix(lowered, "_with_grant")
 	if withGrant {
-		base = lowered[:len(lowered)-len("_with_grant")]
-	} else {
-		base = lowered
+		base := lowered[:len(lowered)-len("_with_grant")]
+		return base, withGrant
 	}
-	return base, withGrant
+	return lowered, withGrant
 }
 
-func sqlPrivilegeName(slug string) (sqlName string, withGrant bool, err error) {
+func sqlPrivilegeName(slug string) (string, bool, error) {
 	base, withGrant := trimWithGrantSuffix(strings.ToLower(slug))
 
 	if sql, ok := staticPrivilegeSQL[base]; ok {
 		return sql, withGrant, nil
+	}
+	switch base {
+	case proxyPriv, proxyWithGrantPriv, roleAssignmentPriv, roleAssignmentWithGrantPriv:
+		return "", false, status.Errorf(codes.InvalidArgument, "baton-mysql: unrecognized privilege %q", slug)
 	}
 	if strings.Contains(base, "_") {
 		if _, ok := dynamicPrivileges[base]; ok {
@@ -103,13 +108,13 @@ func grantPrivilegeString(sqlName string, withGrant bool) string {
 	return sqlName
 }
 
-func resolveServerPrivilege(entitlementID string) (sqlName string, withGrant bool, err error) {
+func resolveServerPrivilege(entitlementID string) (string, bool, error) {
 	parts := strings.Split(entitlementID, ":")
 	if len(parts) < 3 {
 		return "", false, fmt.Errorf("invalid entitlement ID: %s", entitlementID)
 	}
 
-	if base, _ := trimWithGrantSuffix(parts[1]); base == "proxy" {
+	if base, _ := trimWithGrantSuffix(parts[1]); base == proxyPriv {
 		return "", false, status.Errorf(codes.Unimplemented, "baton-mysql: proxy grants at server scope are not supported by MySQL grammar")
 	}
 
