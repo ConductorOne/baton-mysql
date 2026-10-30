@@ -135,15 +135,40 @@ func sqlPrivilegeName(slug string) (string, bool, error) {
 	return strings.ToUpper(base), withGrant, nil
 }
 
-func resolveServerPrivilege(entitlementID string) (string, bool, error) {
+// revokeServerPrivilegeName resolves the SQL name for the SERVER syncer's
+// Revoke path only. A revoke of a dynamic privilege the frozen catalog does
+// not list keeps the spelling main sent: sync reads mysql.global_grants
+// unchanged and can surface documented dynamics the catalog cannot grow
+// without breaking the stable-slug API, so failing closed here would block
+// revokes that GRANT <NAME> ON *.* successfully issued.
+func revokeServerPrivilegeName(slug string) (string, bool, error) {
+	name, withGrant, err := sqlPrivilegeName(slug)
+	if err == nil {
+		return name, withGrant, nil
+	}
+	base, withGrant := trimWithGrantSuffix(strings.ToLower(slug))
+	switch base {
+	case proxyPriv, proxyWithGrantPriv, roleAssignmentPriv, roleAssignmentWithGrantPriv:
+		return "", false, err
+	}
+	if baseSlugRe.MatchString(base) && strings.Contains(base, "_") {
+		return strings.ToUpper(base), withGrant, nil
+	}
+	return "", false, err
+}
+
+func resolveServerPrivilege(entitlementID string, forRevoke bool) (string, bool, error) {
 	parts := strings.Split(entitlementID, ":")
 	if len(parts) < 3 {
-		return "", false, fmt.Errorf("invalid entitlement ID: %s", entitlementID)
+		return "", false, fmt.Errorf("baton-mysql: invalid entitlement ID: %s", entitlementID)
 	}
 
 	if base, _ := trimWithGrantSuffix(parts[1]); base == proxyPriv {
 		return "", false, status.Errorf(codes.Unimplemented, "baton-mysql: proxy grants at server scope are not supported by MySQL grammar")
 	}
 
+	if forRevoke {
+		return revokeServerPrivilegeName(parts[1])
+	}
 	return sqlPrivilegeName(parts[1])
 }

@@ -55,9 +55,10 @@ func TestServerSyncerRejections(t *testing.T) {
 		_, err := s.Grant(ctx, principal, entitlement("entitlement:not_a_real_priv:server:x"))
 		require.Error(t, err)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
-		_, err = s.Revoke(ctx, grant("entitlement:not_a_real_priv:server:x", principal))
-		require.Error(t, err)
-		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		// Revoke keeps the spelling main sent for underscore slugs the frozen
+		// catalog does not list (revokeServerPrivilegeName fallback), so the
+		// revoke path no longer fails closed here; TestResolveServerPrivilege
+		// pins the pass-through ("NOT_A_REAL_PRIV").
 	})
 
 	t.Run("malformed entitlement ID", func(t *testing.T) {

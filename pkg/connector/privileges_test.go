@@ -148,12 +148,12 @@ func TestSqlPrivilegeNameCharset(t *testing.T) {
 }
 
 func TestResolveServerPrivilege(t *testing.T) {
-	name, withGrant, err := resolveServerPrivilege("entitlement:show_databases:server:srv1")
+	name, withGrant, err := resolveServerPrivilege("entitlement:show_databases:server:srv1", false)
 	require.NoError(t, err)
 	require.False(t, withGrant)
 	require.Equal(t, "SHOW DATABASES", name)
 
-	name, withGrant, err = resolveServerPrivilege("entitlement:backup_admin_with_grant:server:srv1")
+	name, withGrant, err = resolveServerPrivilege("entitlement:backup_admin_with_grant:server:srv1", false)
 	require.NoError(t, err)
 	require.True(t, withGrant)
 	require.Equal(t, "BACKUP_ADMIN", name)
@@ -161,28 +161,47 @@ func TestResolveServerPrivilege(t *testing.T) {
 	// The transposed catalog slug with _with_grant must keep its withGrant
 	// flag (the server grant path composes the trailing clause) while the
 	// mapper corrects the SQL spelling.
-	name, withGrant, err = resolveServerPrivilege("entitlement:nbd_stored_user_with_grant:server:srv1")
+	name, withGrant, err = resolveServerPrivilege("entitlement:nbd_stored_user_with_grant:server:srv1", false)
 	require.NoError(t, err)
 	require.True(t, withGrant)
 	require.Equal(t, "NDB_STORED_USER", name)
 
-	_, _, err = resolveServerPrivilege("entitlement:proxy:server:srv1")
+	_, _, err = resolveServerPrivilege("entitlement:proxy:server:srv1", false)
 	require.Error(t, err)
 	require.Equal(t, codes.Unimplemented, status.Code(err))
 	require.Contains(t, err.Error(), "baton-mysql: proxy grants at server scope are not supported by MySQL grammar")
 
-	_, _, err = resolveServerPrivilege("entitlement:proxy_with_grant:server:srv1")
+	_, _, err = resolveServerPrivilege("entitlement:proxy_with_grant:server:srv1", false)
 	require.Error(t, err)
 	require.Equal(t, codes.Unimplemented, status.Code(err))
 	require.Contains(t, err.Error(), "baton-mysql: proxy grants at server scope are not supported by MySQL grammar")
 
-	_, _, err = resolveServerPrivilege("entitlement:show_databases")
+	_, _, err = resolveServerPrivilege("entitlement:show_databases", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), fmt.Sprintf("invalid entitlement ID: %s", "entitlement:show_databases"))
 
-	_, _, err = resolveServerPrivilege("entitlement:not_a_real_priv:server:x")
+	_, _, err = resolveServerPrivilege("entitlement:not_a_real_priv:server:x", false)
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// Revoke path only: a dynamic privilege the frozen catalog does not list
+	// keeps the spelling main sent (sync can surface documented dynamics the
+	// catalog cannot grow without breaking the stable-slug API); GRANT stays
+	// fail-closed.
+	name, withGrant, err = resolveServerPrivilege("entitlement:tp_connection_admin:server:srv1", true)
+	require.NoError(t, err)
+	require.False(t, withGrant)
+	require.Equal(t, "TP_CONNECTION_ADMIN", name)
+
+	name, withGrant, err = resolveServerPrivilege("entitlement:telemetry_log_admin_with_grant:server:srv1", true)
+	require.NoError(t, err)
+	require.True(t, withGrant)
+	require.Equal(t, "TELEMETRY_LOG_ADMIN", name)
+
+	name, withGrant, err = resolveServerPrivilege("entitlement:not_a_real_priv:server:x", true)
+	require.NoError(t, err)
+	require.False(t, withGrant)
+	require.Equal(t, "NOT_A_REAL_PRIV", name)
 }
 
 func TestGrantPrivilegeStringRejectsWithGrant(t *testing.T) {

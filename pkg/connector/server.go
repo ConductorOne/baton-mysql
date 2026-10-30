@@ -70,7 +70,7 @@ func newServerSyncer(c *client.Client) *serverSyncer {
 }
 
 func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	privilege, withGrant, err := resolveServerPrivilege(entitlement.Id)
+	privilege, withGrant, err := resolveServerPrivilege(entitlement.Id, false)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 }
 
 func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	sqlName, _, err := resolveServerPrivilege(grant.Entitlement.Id)
+	sqlName, _, err := resolveServerPrivilege(grant.Entitlement.Id, true)
 	if err != nil {
 		return nil, err
 	}

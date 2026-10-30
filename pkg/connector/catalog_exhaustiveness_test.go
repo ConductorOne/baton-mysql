@@ -18,12 +18,12 @@ func TestCatalogExhaustiveness(t *testing.T) {
 				case resourceTypeServer.Id:
 					base, _ := trimWithGrantSuffix(id)
 					if base == "proxy" {
-						_, _, err := resolveServerPrivilege("entitlement:" + id + ":server:x")
+						_, _, err := resolveServerPrivilege("entitlement:"+id+":server:x", false)
 						require.Error(t, err)
 						require.Equal(t, codes.Unimplemented, status.Code(err))
 						return
 					}
-					name, withGrant, err := resolveServerPrivilege("entitlement:" + id + ":server:x")
+					name, withGrant, err := resolveServerPrivilege("entitlement:"+id+":server:x", false)
 					require.NoError(t, err)
 					require.NotEmpty(t, name)
 					require.Equal(t, strings.HasSuffix(id, "_with_grant"), withGrant)
