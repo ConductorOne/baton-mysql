@@ -55,6 +55,14 @@ By default, the connector will introspect all databases that it has access to re
 
 # Advanced Setup
 
+> **Upgrading?** Routine (procedure/function) grant sync now reads `mysql.procs_priv`
+> directly. If the connector account was set up before this release, a DBA must run the
+> `GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO conductorone;`
+> statement below (and the matching statement in `docs/connector.mdx`) before syncing,
+> or every sync will fail with an error naming that grant. Without it the connector
+> would see zero routine grants and ConductorOne would delete previously synced routine
+> grants — failing loudly is deliberate.
+
 1. Create a new user for the connector to connect to MySQL as. Be sure to create and save the secure password for this user:
 
 ```mysql
@@ -70,6 +78,8 @@ GRANT SELECT (Host, User, Db, Select_priv, Insert_priv, Update_priv,  Delete_pri
               Execute_priv, Create_view_priv, Show_view_priv, Create_routine_priv,
               Alter_routine_priv, Event_priv, Trigger_priv) ON mysql.db TO conductorone;
 GRANT SELECT (Host, User, Db, Table_priv, Table_name) ON mysql.tables_priv TO conductorone;
+# Routine (procedure/function) grants, required for routine-level grant sync.
+GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO conductorone;
 GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO conductorone;
 GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, Create_priv, Drop_priv, Reload_priv,
               Shutdown_priv, Process_priv,
@@ -88,6 +98,8 @@ GRANT SELECT (Host, User, Db, Select_priv, Insert_priv, Update_priv,  Delete_pri
               Execute_priv, Create_view_priv, Show_view_priv, Create_routine_priv,
               Alter_routine_priv, Event_priv, Trigger_priv) ON mysql.db TO conductorone;
 GRANT SELECT (Host, User, Db, Table_priv, Table_name) ON mysql.tables_priv TO conductorone;
+# Routine (procedure/function) grants, required for routine-level grant sync.
+GRANT SELECT (Host, User, Db, Routine_name, Proc_priv) ON mysql.procs_priv TO conductorone;
 GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO conductorone;
 GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, Create_priv, Drop_priv, Reload_priv,
               Shutdown_priv, Process_priv,
