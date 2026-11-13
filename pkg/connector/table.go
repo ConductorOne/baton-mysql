@@ -9,6 +9,8 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type tableSyncer struct {
@@ -83,9 +85,10 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 
 	parts := strings.Split(entitlement.Id, ":")
 	if len(parts) != 4 {
-		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
+		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", entitlement.Id)
 	}
 	privilege := parts[1]
+	keyword := tablePrivilege(privilege)
 	tableID := parts[3]
 
 	user, err := principalAccount(principal.Id)
@@ -93,7 +96,7 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 		return nil, err
 	}
 
-	err = s.client.GrantTablePrivilege(ctx, tableID, user, privilege)
+	err = s.client.GrantTablePrivilege(ctx, tableID, user, keyword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant %s on %s to %s: %w", privilege, tableID, principal.Id.Resource, err)
 	}
@@ -104,9 +107,10 @@ func (s *tableSyncer) Grant(ctx context.Context, principal *v2.Resource, entitle
 func (s *tableSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	parts := strings.Split(grant.Entitlement.Id, ":")
 	if len(parts) != 4 {
-		return nil, fmt.Errorf("invalid entitlement ID: %s", grant.Entitlement.Id)
+		return nil, status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", grant.Entitlement.Id)
 	}
 	privilege := parts[1]
+	keyword := tablePrivilege(privilege)
 	tableID := parts[3]
 
 	user, err := principalAccount(grant.Principal.Id)
@@ -114,10 +118,28 @@ func (s *tableSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.
 		return nil, err
 	}
 
-	err = s.client.RevokeTablePrivilege(ctx, tableID, user, privilege)
+	err = s.client.RevokeTablePrivilege(ctx, tableID, user, keyword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke %s on %s from %s: %w", privilege, tableID, grant.Principal.Id.Resource, err)
 	}
 
 	return nil, nil
+}
+
+// staticTablePrivileges maps the catalog keys for MySQL 8 multi-word table
+// privileges to the space-separated keyword MySQL accepts. Every other table
+// privilege is single-word and covered by strings.ToUpper.
+var staticTablePrivileges = map[string]string{
+	"create_view": "CREATE VIEW",
+	"grant":       "GRANT OPTION",
+	"show_view":   "SHOW VIEW",
+}
+
+// tablePrivilege translates a table-scope catalog key into the privilege
+// keyword MySQL expects.
+func tablePrivilege(key string) string {
+	if kw, ok := staticTablePrivileges[key]; ok {
+		return kw
+	}
+	return strings.ToUpper(key)
 }

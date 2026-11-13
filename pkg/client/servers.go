@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
@@ -39,14 +38,28 @@ func (c *Client) ExecContext(ctx context.Context, query string) (sql.Result, err
 	return c.db.ExecContext(ctx, query)
 }
 
-func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string) error {
+// serverGrantStatement builds the GRANT statement for a server-scope privilege.
+// WITH GRANT OPTION is emitted after the account, MySQL's legal position.
+func serverGrantStatement(userAccount, privilege string, withGrant bool) string {
+	stmt := fmt.Sprintf("GRANT %s ON *.* TO %s", privilege, userAccount)
+	if withGrant {
+		stmt += " WITH GRANT OPTION"
+	}
+	return stmt
+}
+
+// serverRevokeStatement builds the REVOKE statement for a server-scope privilege.
+func serverRevokeStatement(userAccount, privilege string) string {
+	return fmt.Sprintf("REVOKE %s ON *.* FROM %s", privilege, userAccount)
+}
+
+func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string, withGrant bool) error {
 	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
-	query := fmt.Sprintf("GRANT %s ON *.* TO %s", strings.ToUpper(privilege), userGrant)
-	_, err = c.db.ExecContext(ctx, query)
+	_, err = c.db.ExecContext(ctx, serverGrantStatement(userGrant, privilege, withGrant))
 	return err
 }
 
@@ -56,7 +69,6 @@ func (c *Client) RevokeServerPrivilege(ctx context.Context, user string, privile
 		return err
 	}
 
-	query := fmt.Sprintf("REVOKE %s ON *.* FROM %s", strings.ToUpper(privilege), userRevoke)
-	_, err = c.db.ExecContext(ctx, query)
+	_, err = c.db.ExecContext(ctx, serverRevokeStatement(userRevoke, privilege))
 	return err
 }
