@@ -2,6 +2,9 @@ package client
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -240,10 +243,10 @@ type ProxyGrant struct {
 	WithGrant   int    `db:"With_grant"`
 }
 
-// ListProxyGrants returns a single user@host row and its perms
+// ListProxyGrants returns the mysql.proxies_priv rows for a user@host.
 // Grants required:
 //
-//	GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO user@host;
+//	GRANT SELECT (Host, User, Proxied_host, Proxied_user, With_grant) ON mysql.proxies_priv TO user@host;
 func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) ([]*ProxyGrant, error) {
 	q := `SELECT
     		User,
@@ -261,7 +264,11 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 
 	var ret []*ProxyGrant
 	for _, r := range out {
-		if r.ProxiedUser == r.User {
+		// Self-proxy skip is host-aware: only drop a row whose proxied
+		// account is the SAME user@host. A same-user-different-host proxy
+		// grant, e.g. GRANT PROXY ON 'dup'@'localhost' TO 'dup'@'%', is a
+		// real, distinct-account grant (mirrors isSelfRoleEdge policy).
+		if isSelfProxyGrant(r) {
 			continue
 		}
 
@@ -270,7 +277,7 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 		if r.ProxiedUser == "" && r.ProxiedHost == "" {
 			s, err := c.GetServerInfo(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("baton-mysql: unable to fetch server info for proxy grants: %w", err)
 			}
 			newR.Id = s.ID
 			ret = append(ret, newR)
@@ -278,7 +285,19 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 		}
 		u, err := c.GetUser(ctx, r.ProxiedUser, r.ProxiedHost)
 		if err != nil {
-			return nil, err
+			if isAccountNotFoundErr(err) {
+				// Orphaned mysql.proxies_priv row: the proxied account no
+				// longer exists. Skip this entry at Debug per the
+				// skip-only-ErrNoRows policy; do not fail the whole listing.
+				ctxzap.Extract(ctx).Debug(
+					"proxied account not found; skipping proxy grant",
+					zap.Error(err),
+					zap.String("proxied_user", r.ProxiedUser),
+					zap.String("proxied_host", r.ProxiedHost),
+				)
+				continue
+			}
+			return nil, fmt.Errorf("baton-mysql: unable to fetch proxied account %s@%s: %w", r.ProxiedUser, r.ProxiedHost, err)
 		}
 		newR.Id = u.GetID()
 		ret = append(ret, newR)
@@ -296,18 +315,38 @@ type RoleGrant struct {
 	WithGrant string `db:"WITH_ADMIN_OPTION"`
 }
 
-// ListRoleGrants returns a single user@host row and its role edges
+// ListRoleGrants returns the role edges granted TO the given account. The
+// synced account is the GRANTEE: the query predicates on the TO side of
+// mysql.role_edges (WHERE TO_USER = ? AND TO_HOST = ?), since a role grant is
+// recorded with the receiving account in TO_USER/TO_HOST and the granted role
+// in FROM_USER/FROM_HOST.
+//
+// Each returned RoleGrant.Id is set to the GRANTED ROLE's resource ID: the
+// FROM side (FROM_USER/FROM_HOST) is resolved via GetUser, yielding the role
+// account's ID (e.g. "role:ops@team@%"). The synced account is the grantee and
+// will be the Principal of the emitted membership grant.
+//
+// Per-edge GetUser failures skip only sql.ErrNoRows (a genuinely absent FROM
+// account mid-sync — MySQL 8 returns no row rather than a permission error),
+// logged at Debug. Any other error is returned wrapped; error swallowing is
+// not permitted.
+//
 // Grants required:
 //
 //	GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO user@host;
-func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) ([]*RoleGrant, error) {
-	q := `SELECT
+
+// roleGrantsQuery is the role-edges query used by ListRoleGrants. It
+// predicates on the TO side (the grantee) — the flipped, corrected direction.
+const roleGrantsQuery = `SELECT
 			FROM_HOST,
 			FROM_USER,
 			TO_HOST,
 			TO_USER,
 			WITH_ADMIN_OPTION
-		FROM mysql.role_edges WHERE FROM_USER = ? AND FROM_HOST = ?`
+		FROM mysql.role_edges WHERE TO_USER = ? AND TO_HOST = ?`
+
+func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) ([]*RoleGrant, error) {
+	q := roleGrantsQuery
 
 	var out []*RoleGrant
 	err := c.db.SelectContext(ctx, &out, q, user, host)
@@ -317,25 +356,51 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) (
 
 	var ret []*RoleGrant
 	for _, r := range out {
-		if r.FromUser == r.ToUser {
+		if isSelfRoleEdge(r) {
 			continue
 		}
 
 		newR := r
 
-		u, err := c.GetUser(ctx, r.ToUser, r.ToHost)
+		u, err := c.GetUser(ctx, r.FromUser, r.FromHost)
 		if err != nil {
-			ctxzap.Extract(ctx).Error(
-				"unable to fetch to user for role. Ignoring grant",
-				zap.Error(err),
-				zap.String("to_user", r.ToUser),
-				zap.String("to_host", r.ToHost),
-			)
-			continue
+			if isAccountNotFoundErr(err) {
+				ctxzap.Extract(ctx).Debug(
+					"role edge FROM account not found; skipping grant",
+					zap.Error(err),
+					zap.String("from_user", r.FromUser),
+					zap.String("from_host", r.FromHost),
+				)
+				continue
+			}
+			return nil, fmt.Errorf("baton-mysql: unable to fetch role edge from account %s@%s: %w", r.FromUser, r.FromHost, err)
 		}
 		newR.Id = u.GetID()
 		ret = append(ret, newR)
 	}
 
 	return ret, nil
+}
+
+// isSelfRoleEdge reports whether a role_edges row grants a role to itself
+// (same user AND same host). A same-user-different-host edge, e.g.
+// 'dup'@'%' TO 'dup'@'localhost', is NOT a self edge and must sync.
+func isSelfRoleEdge(r *RoleGrant) bool {
+	return r.FromUser == r.ToUser && r.FromHost == r.ToHost
+}
+
+// isSelfProxyGrant reports whether a proxies_priv row's proxied account is
+// the SAME user AND host as the grantee. A same-user-different-host proxy
+// grant, e.g. GRANT PROXY ON 'dup'@'localhost' TO 'dup'@'%', is NOT a self
+// grant and must sync (mirrors isSelfRoleEdge policy).
+func isSelfProxyGrant(r *ProxyGrant) bool {
+	return r.ProxiedUser == r.User && r.ProxiedHost == r.Host
+}
+
+// isAccountNotFoundErr reports whether err is (or wraps) sql.ErrNoRows — a
+// genuinely absent account row in mysql.user. Per the skip policy, this is
+// the ONLY error class that may be skipped with a Debug log; every other
+// error must be returned wrapped.
+func isAccountNotFoundErr(err error) bool {
+	return errors.Is(err, sql.ErrNoRows)
 }
