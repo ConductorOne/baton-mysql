@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -71,14 +70,17 @@ func newServerSyncer(c *client.Client) *serverSyncer {
 }
 
 func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	privilege := extractServerPrivilege(entitlement.Id)
+	privilege, withGrant, err := resolveServerPrivilege(entitlement.Id, false)
+	if err != nil {
+		return nil, err
+	}
 
 	userStr, err := principalAccount(principal.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.client.GrantServerPrivilege(ctx, userStr, privilege)
+	err = s.client.GrantServerPrivilege(ctx, userStr, privilege, withGrant)
 	if err != nil {
 		return nil, fmt.Errorf("grant failed: %w", err)
 	}
@@ -87,32 +89,21 @@ func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 }
 
 func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	privilege := extractServerPrivilege(grant.Entitlement.Id)
+	sqlName, _, err := resolveServerPrivilege(grant.Entitlement.Id, true)
+	if err != nil {
+		return nil, err
+	}
 
 	userStr, err := principalAccount(grant.Principal.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.client.RevokeServerPrivilege(ctx, userStr, privilege)
+	// Revoke uses the base privilege: revoking drops the grant option along with the privilege.
+	err = s.client.RevokeServerPrivilege(ctx, userStr, sqlName)
 	if err != nil {
 		return nil, fmt.Errorf("revoke failed: %w", err)
 	}
 
 	return nil, nil
-}
-
-func extractServerPrivilege(entitlementID string) string {
-	parts := strings.Split(entitlementID, ":")
-	if len(parts) < 3 {
-		return ""
-	}
-
-	privilegePart := parts[1]
-	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_WITH_GRANT", ""))
-
-	if strings.Contains(privilegePart, "_with_grant") {
-		return priv + " WITH GRANT OPTION"
-	}
-	return priv
 }

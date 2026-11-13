@@ -35,3 +35,6 @@ jobs:
         run: ./baton-mysql
       - name: Check grant exists
         run: ./baton-mysql && baton grants --entitlement "${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
+
+      - name: Run go tests
+        run: go test ./pkg/connector/... ./pkg/client/...

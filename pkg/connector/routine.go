@@ -58,6 +58,19 @@ func (s *routineSyncer) Entitlements(ctx context.Context, resource *v2.Resource,
 	return entitlements, "", nil, nil
 }
 
+func routinePrivilege(rawPrivilege string) (string, error) {
+	switch strings.ToLower(rawPrivilege) {
+	case "execute":
+		return "EXECUTE", nil
+	case "alter_routine":
+		return "ALTER ROUTINE", nil
+	case grantOptionSlug:
+		return "GRANT OPTION", nil
+	default:
+		return "", fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+	}
+}
+
 func (s *routineSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	return nil, "", nil, nil
 }
@@ -86,14 +99,9 @@ func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entit
 		return nil, fmt.Errorf("unsupported resource kind in entitlement ID: %s", entitlement.Id)
 	}
 
-	var privilege string
-	switch strings.ToLower(rawPrivilege) {
-	case "execute":
-		privilege = "EXECUTE"
-	case "alter_routine":
-		privilege = "ALTER ROUTINE"
-	default:
-		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+	privilege, err := routinePrivilege(rawPrivilege)
+	if err != nil {
+		return nil, err
 	}
 
 	schemaRoutine := strings.Split(fullRoutineName, ".")
@@ -129,14 +137,9 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 		return nil, fmt.Errorf("unsupported resource kind in entitlement ID: %s", grant.Entitlement.Id)
 	}
 
-	var privilege string
-	switch strings.ToLower(rawPrivilege) {
-	case "execute":
-		privilege = "EXECUTE"
-	case "alter_routine":
-		privilege = "ALTER ROUTINE"
-	default:
-		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+	privilege, err := routinePrivilege(rawPrivilege)
+	if err != nil {
+		return nil, err
 	}
 
 	schemaRoutine := strings.Split(fullRoutineName, ".")
