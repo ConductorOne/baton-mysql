@@ -58,6 +58,11 @@ func grantsForUserOrRole(
 			return nil, err
 		}
 
+		err = listRoutineGrants(ctx, user, host, grantMap, skipDbs, c)
+		if err != nil {
+			return nil, err
+		}
+
 		err = listProxyGrants(ctx, user, host, grantMap, c)
 		if err != nil {
 			return nil, err
@@ -236,6 +241,34 @@ func listColumnGrants(
 	}
 
 	return nil
+}
+
+// listRoutineGrants returns a map keyed by entitlement ID for granted routine (procedure/function) privileges.
+func listRoutineGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, skipDbs map[string]struct{}, c *client.Client) error {
+	routineGrants, err := c.ListRoutineGrants(ctx, user, host)
+	if err != nil {
+		return err
+	}
+
+	for _, k := range routineGrantKeys(ctx, routineGrants, skipDbs) {
+		grantMap[k] = struct{}{}
+	}
+
+	return nil
+}
+
+// routineGrantKeys builds the entitlement keys for the given routine grants, skipping grants in skipped databases.
+func routineGrantKeys(ctx context.Context, grants []*client.RoutineGrant, skipDbs map[string]struct{}) []string {
+	var keys []string
+	for _, g := range grants {
+		if _, ok := skipDbs[g.Database]; ok {
+			continue
+		}
+		for priv := range g.GetPrivs(ctx) {
+			keys = append(keys, fmt.Sprintf("%s:%s", strings.ToLower(priv), g.Id))
+		}
+	}
+	return keys
 }
 
 // listProxyGrants returns a map keyed by entitlement ID for granted proxy privileges.
