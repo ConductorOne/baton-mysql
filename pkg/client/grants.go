@@ -309,7 +309,7 @@ type RoleGrant struct {
 	ToHost    string         `db:"TO_HOST"`
 	ToUser    string         `db:"TO_USER"`
 	WithGrant string         `db:"WITH_ADMIN_OPTION"`
-	RoleType  sql.NullString `db:"role_type"`
+	RoleType  string         `db:"role_type"`
 	FromHosts sql.NullString `db:"from_hosts"`
 }
 
@@ -350,17 +350,6 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, c
 			continue
 		}
 
-		if !e.RoleType.Valid {
-			ctxzap.Extract(ctx).Error(
-				"role edge has no matching account. Ignoring grant",
-				zap.String("from_user", e.FromUser),
-				zap.String("from_host", e.FromHost),
-				zap.String("to_user", e.ToUser),
-				zap.String("to_host", e.ToHost),
-			)
-			continue
-		}
-
 		e.Id = e.roleID(collapseUsers)
 		ret = append(ret, e)
 	}
@@ -374,7 +363,7 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, c
 // that membership is real, but under collapseUsers those hosts are one identity
 // and the membership is the identity holding itself.
 func (r *RoleGrant) heldBySameAccount(collapseUsers bool) bool {
-	if collapseUsers && r.RoleType.String == UserType {
+	if collapseUsers && r.RoleType == UserType {
 		return r.FromUser == r.ToUser
 	}
 	return r.FromUser == r.ToUser && r.FromHost == r.ToHost
@@ -386,8 +375,8 @@ func (r *RoleGrant) heldBySameAccount(collapseUsers bool) bool {
 // ListUsers groups it under; roles are never collapsed.
 func (r *RoleGrant) roleID(collapseUsers bool) string {
 	host := r.FromHost
-	if collapseUsers && r.RoleType.String == UserType && r.FromHosts.Valid {
+	if collapseUsers && r.RoleType == UserType && r.FromHosts.Valid {
 		host = r.FromHosts.String
 	}
-	return fmt.Sprintf("%s:%s@%s", r.RoleType.String, r.FromUser, host)
+	return fmt.Sprintf("%s:%s@%s", r.RoleType, r.FromUser, host)
 }
