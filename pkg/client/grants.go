@@ -317,7 +317,12 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, c
 			h.from_hosts
 		FROM mysql.role_edges e
 		LEFT JOIN mysql.user u ON u.User = e.FROM_USER AND u.Host = e.FROM_HOST
-		LEFT JOIN (SELECT User, GROUP_CONCAT(Host) AS from_hosts FROM mysql.user GROUP BY User) h
+		LEFT JOIN (
+				SELECT User, GROUP_CONCAT(Host) AS from_hosts
+				FROM mysql.user
+				WHERE authentication_string != ''
+				GROUP BY User
+			) h
 			ON h.User = e.FROM_USER
 		WHERE e.TO_USER = ? AND e.TO_HOST = ?`
 
