@@ -64,7 +64,7 @@ func grantsForUserOrRole(
 		}
 
 		if c.IsVersion8() {
-			err = listRoleGrants(ctx, user, host, grantMap, c)
+			err = listRoleGrants(ctx, user, host, grantMap, c, collapseUsers)
 			if err != nil {
 				return nil, err
 			}
@@ -262,8 +262,8 @@ func listProxyGrants(ctx context.Context, user, host string, grantMap map[string
 }
 
 // listRoleGrants returns a map keyed by entitlement ID for granted role edges.
-func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
-	roleGrants, err := c.ListRoleGrants(ctx, user, host)
+func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client, collapseUsers bool) error {
+	roleGrants, err := c.ListRoleGrants(ctx, user, host, collapseUsers)
 	if err != nil {
 		return err
 	}
