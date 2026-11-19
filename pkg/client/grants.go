@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -242,10 +243,11 @@ type ProxyGrant struct {
 	WithGrant   int    `db:"With_grant"`
 }
 
-// ListProxyGrants returns a single user@host row and its perms
+// ListProxyGrants returns the proxy grants held by the given account.
+//
 // Grants required:
 //
-//	GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO user@host;
+//	GRANT SELECT (Host, User, Proxied_host, Proxied_user, With_grant) ON mysql.proxies_priv TO user@host;
 func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) ([]*ProxyGrant, error) {
 	q := `SELECT
     		User,
@@ -280,7 +282,18 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 		}
 		u, err := c.GetUser(ctx, r.ProxiedUser, r.ProxiedHost)
 		if err != nil {
-			return nil, err
+			if errors.Is(err, sql.ErrNoRows) {
+				// The proxied account is gone but its row is not. Skipping the
+				// row keeps the account's other proxy grants, which returning
+				// here would discard along with it.
+				ctxzap.Extract(ctx).Debug(
+					"proxied account not found. Ignoring grant",
+					zap.String("proxied_user", r.ProxiedUser),
+					zap.String("proxied_host", r.ProxiedHost),
+				)
+				continue
+			}
+			return nil, fmt.Errorf("baton-mysql: unable to fetch proxied account: %w", err)
 		}
 		newR.Id = u.GetID()
 		ret = append(ret, newR)
