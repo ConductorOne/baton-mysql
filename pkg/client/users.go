@@ -71,9 +71,7 @@ CASE WHEN Alter_routine_priv = 'Y' THEN 'alter_routine,' ELSE '' END,
 CASE WHEN Create_user_priv = 'Y' THEN 'create_user,' ELSE '' END,
 CASE WHEN Event_priv = 'Y' THEN 'event,' ELSE '' END,
 CASE WHEN Trigger_priv = 'Y' THEN 'trigger,' ELSE '' END,
-CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END,
-CASE WHEN Create_role_priv = 'Y' THEN 'create_role,' ELSE '' END,
-CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END`)
+CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END`)
 	if err != nil {
 		return err
 	}

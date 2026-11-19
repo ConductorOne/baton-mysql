@@ -7,8 +7,6 @@ import (
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
 )
 
 func grantsForUserOrRole(
@@ -64,7 +62,7 @@ func grantsForUserOrRole(
 		}
 
 		if c.IsVersion8() {
-			err = listRoleGrants(ctx, user, host, grantMap, c)
+			err = listRoleGrants(ctx, user, host, grantMap, c, collapseUsers)
 			if err != nil {
 				return nil, err
 			}
@@ -114,13 +112,7 @@ func listGlobalGrants(
 ) error {
 	u, err := c.GetUser(ctx, user, host)
 	if err != nil {
-		ctxzap.Extract(ctx).Error(
-			"unable to fetch to user for global grant. Ignoring grants",
-			zap.Error(err),
-			zap.String("user", user),
-			zap.String("host", host),
-		)
-		return nil
+		return fmt.Errorf("baton-mysql: unable to fetch account %s@%s for global grants: %w", user, host, err)
 	}
 
 	if c.IsVersion8() {
@@ -242,13 +234,7 @@ func listColumnGrants(
 func listProxyGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
 	proxyGrants, err := c.ListProxyGrants(ctx, user, host)
 	if err != nil {
-		ctxzap.Extract(ctx).Error(
-			"unable to fetch to proxy grants. ignoring",
-			zap.Error(err),
-			zap.String("user", user),
-			zap.String("host", host),
-		)
-		return nil
+		return fmt.Errorf("baton-mysql: unable to list proxy grants for %s@%s: %w", user, host, err)
 	}
 
 	for _, g := range proxyGrants {
@@ -262,8 +248,8 @@ func listProxyGrants(ctx context.Context, user, host string, grantMap map[string
 }
 
 // listRoleGrants returns a map keyed by entitlement ID for granted role edges.
-func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
-	roleGrants, err := c.ListRoleGrants(ctx, user, host)
+func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client, collapseUsers bool) error {
+	roleGrants, err := c.ListRoleGrants(ctx, user, host, collapseUsers)
 	if err != nil {
 		return err
 	}

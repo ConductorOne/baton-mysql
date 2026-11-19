@@ -2,6 +2,9 @@ package client
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -240,10 +243,11 @@ type ProxyGrant struct {
 	WithGrant   int    `db:"With_grant"`
 }
 
-// ListProxyGrants returns a single user@host row and its perms
+// ListProxyGrants returns the proxy grants held by the given account.
+//
 // Grants required:
 //
-//	GRANT SELECT (Host, User, Db, Column_name, Column_priv, Table_name) ON mysql.columns_priv TO user@host;
+//	GRANT SELECT (Host, User, Proxied_host, Proxied_user, With_grant) ON mysql.proxies_priv TO user@host;
 func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) ([]*ProxyGrant, error) {
 	q := `SELECT
     		User,
@@ -278,7 +282,18 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 		}
 		u, err := c.GetUser(ctx, r.ProxiedUser, r.ProxiedHost)
 		if err != nil {
-			return nil, err
+			if errors.Is(err, sql.ErrNoRows) {
+				// The proxied account is gone but its row is not. Skipping the
+				// row keeps the account's other proxy grants, which returning
+				// here would discard along with it.
+				ctxzap.Extract(ctx).Debug(
+					"proxied account not found. Ignoring grant",
+					zap.String("proxied_user", r.ProxiedUser),
+					zap.String("proxied_host", r.ProxiedHost),
+				)
+				continue
+			}
+			return nil, fmt.Errorf("baton-mysql: unable to fetch proxied account: %w", err)
 		}
 		newR.Id = u.GetID()
 		ret = append(ret, newR)
@@ -288,54 +303,80 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 }
 
 type RoleGrant struct {
-	Id        string `db:"-"`
-	FromHost  string `db:"FROM_HOST"`
-	FromUser  string `db:"FROM_USER"`
-	ToHost    string `db:"TO_HOST"`
-	ToUser    string `db:"TO_USER"`
-	WithGrant string `db:"WITH_ADMIN_OPTION"`
+	Id        string         `db:"-"`
+	FromHost  string         `db:"FROM_HOST"`
+	FromUser  string         `db:"FROM_USER"`
+	ToHost    string         `db:"TO_HOST"`
+	ToUser    string         `db:"TO_USER"`
+	WithGrant string         `db:"WITH_ADMIN_OPTION"`
+	RoleType  string         `db:"role_type"`
+	FromHosts sql.NullString `db:"from_hosts"`
 }
 
-// ListRoleGrants returns a single user@host row and its role edges
+// ListRoleGrants returns the roles held by the given account.
+//
 // Grants required:
 //
 //	GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO user@host;
-func (c *Client) ListRoleGrants(ctx context.Context, user string, host string) ([]*RoleGrant, error) {
+//	GRANT SELECT (User, Host, authentication_string) ON mysql.user TO user@host;
+func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, collapseUsers bool) ([]*RoleGrant, error) {
 	q := `SELECT
-			FROM_HOST,
-			FROM_USER,
-			TO_HOST,
-			TO_USER,
-			WITH_ADMIN_OPTION
-		FROM mysql.role_edges WHERE FROM_USER = ? AND FROM_HOST = ?`
+			e.FROM_HOST,
+			e.FROM_USER,
+			e.TO_HOST,
+			e.TO_USER,
+			e.WITH_ADMIN_OPTION,
+			CASE WHEN u.authentication_string = '' THEN 'role' ELSE 'user' END AS role_type,
+			h.from_hosts
+		FROM mysql.role_edges e
+		LEFT JOIN mysql.user u ON u.User = e.FROM_USER AND u.Host = e.FROM_HOST
+		LEFT JOIN (
+				SELECT User, GROUP_CONCAT(Host) AS from_hosts
+				FROM mysql.user
+				WHERE authentication_string != ''
+				GROUP BY User
+			) h
+			ON h.User = e.FROM_USER
+		WHERE e.TO_USER = ? AND e.TO_HOST = ?`
 
-	var out []*RoleGrant
-	err := c.db.SelectContext(ctx, &out, q, user, host)
-	if err != nil {
+	var edges []*RoleGrant
+	if err := c.db.SelectContext(ctx, &edges, q, user, host); err != nil {
 		return nil, err
 	}
 
-	var ret []*RoleGrant
-	for _, r := range out {
-		if r.FromUser == r.ToUser {
+	ret := make([]*RoleGrant, 0, len(edges))
+	for _, e := range edges {
+		if e.heldBySameAccount(collapseUsers) {
 			continue
 		}
 
-		newR := r
-
-		u, err := c.GetUser(ctx, r.ToUser, r.ToHost)
-		if err != nil {
-			ctxzap.Extract(ctx).Error(
-				"unable to fetch to user for role. Ignoring grant",
-				zap.Error(err),
-				zap.String("to_user", r.ToUser),
-				zap.String("to_host", r.ToHost),
-			)
-			continue
-		}
-		newR.Id = u.GetID()
-		ret = append(ret, newR)
+		e.Id = e.roleID(collapseUsers)
+		ret = append(ret, e)
 	}
 
 	return ret, nil
+}
+
+// heldBySameAccount reports whether the edge grants an account to itself. What
+// counts as one account follows the sync: normally the user and the host
+// together, since two accounts can share a user name and differ only in host and
+// that membership is real, but under collapseUsers those hosts are one identity
+// and the membership is the identity holding itself.
+func (r *RoleGrant) heldBySameAccount(collapseUsers bool) bool {
+	if collapseUsers && r.RoleType == UserType {
+		return r.FromUser == r.ToUser
+	}
+	return r.FromUser == r.ToUser && r.FromHost == r.ToHost
+}
+
+// roleID matches the "<type>:<user>@<host>" shape User.GetID produces, which the
+// entitlement and grant IDs are built from. Under collapseUsers a user-typed
+// account is one identity across its hosts, so the id carries the same host list
+// ListUsers groups it under; roles are never collapsed.
+func (r *RoleGrant) roleID(collapseUsers bool) string {
+	host := r.FromHost
+	if collapseUsers && r.RoleType == UserType && r.FromHosts.Valid {
+		host = r.FromHosts.String
+	}
+	return fmt.Sprintf("%s:%s@%s", r.RoleType, r.FromUser, host)
 }
