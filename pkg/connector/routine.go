@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -68,92 +69,89 @@ func newRoutineSyncer(c *client.Client) *routineSyncer {
 		client:       c,
 	}
 }
-func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("can only grant routine permissions to users")
-	}
 
-	parts := strings.Split(entitlement.Id, ":")
+// routinePrivileges maps the entitlement privilege ID to the MySQL privilege name.
+var routinePrivileges = map[string]string{
+	"execute":       "EXECUTE",
+	"alter_routine": "ALTER ROUTINE",
+	"grant":         "GRANT OPTION",
+}
+
+// parseRoutineEntitlement splits "entitlement:<privilege>:routine:<schema>.<routine>"
+// into the MySQL privilege name and the routine it applies to.
+func parseRoutineEntitlement(entitlementID string) (string, string, string, error) {
+	parts := strings.SplitN(entitlementID, ":", 4)
 	if len(parts) != 4 {
-		return nil, fmt.Errorf("invalid entitlement ID: %s", entitlement.Id)
+		return "", "", "", fmt.Errorf("baton-mysql: invalid entitlement ID: %s", entitlementID)
 	}
 
-	rawPrivilege := parts[1]
-	resourceKind := parts[2]
-	fullRoutineName := parts[3]
-
-	if resourceKind != "routine" {
-		return nil, fmt.Errorf("unsupported resource kind in entitlement ID: %s", entitlement.Id)
+	if parts[2] != resourceTypeRoutine.Id {
+		return "", "", "", fmt.Errorf("baton-mysql: unsupported resource kind in entitlement ID: %s", entitlementID)
 	}
 
-	var privilege string
-	switch strings.ToLower(rawPrivilege) {
-	case "execute":
-		privilege = "EXECUTE"
-	case "alter_routine":
-		privilege = "ALTER ROUTINE"
+	privilege, ok := routinePrivileges[strings.ToLower(parts[1])]
+	if !ok {
+		return "", "", "", fmt.Errorf("baton-mysql: unsupported privilege for routine: %s", parts[1])
+	}
+
+	schema, routineName, found := strings.Cut(parts[3], ".")
+	if !found || schema == "" || routineName == "" {
+		return "", "", "", fmt.Errorf("baton-mysql: invalid routine name, expected schema.name: %s", parts[3])
+	}
+
+	return privilege, schema, routineName, nil
+}
+
+func (s *routineSyncer) routineAccount(principal *v2.Resource) (string, error) {
+	switch principal.Id.ResourceType {
+	case resourceTypeUser.Id:
+	case resourceTypeRole.Id:
+		if !s.client.IsVersion8() {
+			return "", fmt.Errorf("baton-mysql: roles require MySQL 8")
+		}
 	default:
-		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
+		return "", fmt.Errorf("baton-mysql: can only grant routine permissions to users and roles, got %s", principal.Id.ResourceType)
 	}
 
-	schemaRoutine := strings.Split(fullRoutineName, ".")
-	if len(schemaRoutine) != 2 {
-		return nil, fmt.Errorf("invalid routine name, expected schema.name: %s", fullRoutineName)
-	}
-	schema := schemaRoutine[0]
-	routineName := schemaRoutine[1]
+	return principalAccount(principal.Id)
+}
 
-	user, err := principalAccount(principal.Id)
+func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	privilege, schema, routineName, err := parseRoutineEntitlement(entitlement.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := s.routineAccount(principal)
 	if err != nil {
 		return nil, err
 	}
 
 	err = s.client.GrantRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	if err != nil {
-		return nil, fmt.Errorf("failed to grant %s on %s.%s to %s: %w", privilege, schema, routineName, user, err)
+		return nil, fmt.Errorf("baton-mysql: failed to grant %s on %s.%s to %s: %w", privilege, schema, routineName, user, err)
 	}
 
 	return nil, nil
 }
+
 func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	parts := strings.Split(grant.Entitlement.Id, ":")
-	if len(parts) != 4 {
-		return nil, fmt.Errorf("invalid entitlement ID: %s", grant.Entitlement.Id)
+	privilege, schema, routineName, err := parseRoutineEntitlement(grant.Entitlement.Id)
+	if err != nil {
+		return nil, err
 	}
 
-	rawPrivilege := parts[1]
-	resourceKind := parts[2]
-	fullRoutineName := parts[3]
-
-	if resourceKind != "routine" {
-		return nil, fmt.Errorf("unsupported resource kind in entitlement ID: %s", grant.Entitlement.Id)
-	}
-
-	var privilege string
-	switch strings.ToLower(rawPrivilege) {
-	case "execute":
-		privilege = "EXECUTE"
-	case "alter_routine":
-		privilege = "ALTER ROUTINE"
-	default:
-		return nil, fmt.Errorf("unsupported privilege for routine: %s", rawPrivilege)
-	}
-
-	schemaRoutine := strings.Split(fullRoutineName, ".")
-	if len(schemaRoutine) != 2 {
-		return nil, fmt.Errorf("invalid routine name, expected schema.name: %s", fullRoutineName)
-	}
-	schema := schemaRoutine[0]
-	routineName := schemaRoutine[1]
-
-	user, err := principalAccount(grant.Principal.Id)
+	user, err := s.routineAccount(grant.Principal)
 	if err != nil {
 		return nil, err
 	}
 
 	err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
-	if err != nil {
-		return nil, fmt.Errorf("failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
+	switch {
+	case errors.Is(err, client.ErrRoutineGrantNotFound):
+		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
+	case err != nil:
+		return nil, fmt.Errorf("baton-mysql: failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)
 	}
 
 	return nil, nil

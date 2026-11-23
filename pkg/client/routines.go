@@ -2,15 +2,24 @@ package client
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/go-sql-driver/mysql"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
 
 const RoutineType = "routine"
+
+// ErrRoutineGrantNotFound reports that the account held no privilege on the routine.
+var ErrRoutineGrantNotFound = errors.New("no such routine grant")
+
+// erNonexistingProcGrant is ER_NONEXISTING_PROC_GRANT, which REVOKE raises for itself.
+const erNonexistingProcGrant = 1403
 
 type RoutineModel struct {
 	ID       string `db:"-"`
@@ -110,6 +119,9 @@ func (c *Client) GrantRoutinePrivilege(ctx context.Context, privilege string, sc
 	return err
 }
 
+// RevokeRoutinePrivilege removes a routine privilege from the account. It revokes one host
+// at a time so that a host holding nothing can be told apart from the whole account
+// holding nothing, which is what ErrRoutineGrantNotFound reports.
 func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, schema string, routineName string, user string) error {
 	routineType, err := c.GetRoutineType(ctx, schema, routineName)
 	if err != nil {
@@ -125,27 +137,63 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 		return err
 	}
 
-	userRevoke, err := quoteAccounts(user)
+	userName, hosts, err := SplitUserHost(user)
 	if err != nil {
 		return err
 	}
 
-	query := fmt.Sprintf("REVOKE %s ON %s %s.%s FROM %s",
-		privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, userRevoke)
-	_, err = c.db.ExecContext(ctx, query)
-	return err
+	hostList := strings.Split(hosts, ",")
+	notFound := 0
+	for _, host := range hostList {
+		account, err := quoteUserHost(userName, host)
+		if err != nil {
+			return err
+		}
+
+		query := fmt.Sprintf("REVOKE %s ON %s %s.%s FROM %s",
+			privilege, strings.ToUpper(routineType), schemaEsc, routineNameEsc, account)
+		_, err = c.db.ExecContext(ctx, query)
+
+		var mysqlErr *mysql.MySQLError
+		switch {
+		case errors.As(err, &mysqlErr) && mysqlErr.Number == erNonexistingProcGrant:
+			notFound++
+		case err != nil:
+			return err
+		}
+	}
+
+	if notFound == len(hostList) {
+		return fmt.Errorf("%w: %s %s.%s for %s", ErrRoutineGrantNotFound, privilege, schema, routineName, user)
+	}
+
+	return nil
 }
 
+// GetRoutineType resolves whether a routine is a PROCEDURE or a FUNCTION, which the GRANT
+// and REVOKE statements need and the routine resource ID does not carry.
 func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string) (string, error) {
 	query := `
-		SELECT ROUTINE_TYPE
+		SELECT DISTINCT ROUTINE_TYPE
 		FROM information_schema.ROUTINES
 		WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?
 	`
-	var routineType string
-	err := c.db.QueryRowContext(ctx, query, schema, routineName).Scan(&routineType)
+
+	var routineTypes []string
+	err := c.db.SelectContext(ctx, &routineTypes, query, schema, routineName)
 	if err != nil {
-		return "", fmt.Errorf("failed to get routine type: %w", err)
+		return "", fmt.Errorf("get routine type for %s.%s: %w", schema, routineName, err)
 	}
-	return routineType, nil
+
+	switch len(routineTypes) {
+	case 0:
+		return "", fmt.Errorf("routine %s.%s not found: %w", schema, routineName, sql.ErrNoRows)
+	case 1:
+		return routineTypes[0], nil
+	default:
+		return "", fmt.Errorf(
+			"%s.%s is both a procedure and a function, so the routine to act on is ambiguous: %s",
+			schema, routineName, strings.Join(routineTypes, ", "),
+		)
+	}
 }

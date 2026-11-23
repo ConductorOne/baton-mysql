@@ -11,7 +11,7 @@ This document provides information needed to set up and use the connector.
 | **Server** | The MySQL server instance itself; root of the resource hierarchy |
 | **Database** | Individual databases hosted on the server; scoped privilege assignments |
 | **Table** | Tables within databases; table-level privilege grants |
-| **Routine** | Stored procedures and functions; execute/alter privilege grants |
+| **Routine** | Stored procedures and functions; `EXECUTE`, `ALTER ROUTINE` and `GRANT OPTION` privilege grants |
 | **User** | MySQL accounts (`user@host`); principal identities in the access graph |
 | **Role** | Named role objects (MySQL 8+ only); role-to-user assignment grants |
 | **Column** | Individual table columns (optional, requires `--expand-columns`); column-level privilege grants |
@@ -24,7 +24,7 @@ Yes.
 |----------|-------|--------|--------|--------|
 | **Database privileges** | ✅ Grants a privilege on a database to a user | ✅ Revokes a privilege on a database from a user | - | - |
 | **Table privileges** | ✅ Grants a privilege on a table to a user | ✅ Revokes a privilege on a table from a user | - | - |
-| **Routine privileges** | ✅ Grants a privilege on a routine to a user | ✅ Revokes a privilege on a routine from a user | - | - |
+| **Routine privileges** | ✅ Grants a privilege on a routine to a user or role | ✅ Revokes a privilege on a routine from a user or role | - | - |
 | **Role assignments** | ✅ Assigns a role to a user (MySQL 8+ only) | ✅ Removes a role from a user (MySQL 8+ only) | - | - |
 | **User accounts** | - | - | ✅ Creates a new MySQL user with a generated password | ✅ Drops a MySQL user account |
 
@@ -51,6 +51,15 @@ The connection string format is: `username:password@tcp(hostname:3306)/`
 
 - **MySQL 5.7 and 8.x** are supported.
 - Role sync and role grant/revoke are available on **MySQL 8+** only. The connector detects the server version at runtime and enables role support automatically.
+
+### Routines That Share a Name
+
+MySQL allows a schema to hold a stored procedure and a stored function under the same
+name, and grants privileges on each separately. A routine resource is identified by its
+schema and name, so both routines answer to one resource. Privileges on such a routine are
+left out of the sync, and a grant or revoke against it returns an error naming the
+ambiguity rather than acting on one of the two. Routines whose name is unique within their
+schema, which is the usual case, are unaffected.
 
 ### API Documentation Links
 

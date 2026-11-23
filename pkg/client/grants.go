@@ -2,9 +2,12 @@ package client
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
 )
 
@@ -229,6 +232,185 @@ func (c *Client) ListColumnGrants(ctx context.Context, user string, host string)
 	}
 
 	return ret, nil
+}
+
+type RoutineGrant struct {
+	Id       string
+	User     string
+	Host     string
+	Database string
+	Routine  string
+	Type     string
+	Privs    string
+}
+
+// GetPrivs parses the routine grant data from mysql.
+func (u *RoutineGrant) GetPrivs(ctx context.Context) map[string]struct{} {
+	ret := make(map[string]struct{})
+
+	privs := strings.Split(u.Privs, ",")
+	for _, priv := range privs {
+		priv := strings.ReplaceAll(strings.TrimSpace(priv), " ", "_")
+		if priv == "" {
+			continue
+		}
+
+		ret[priv] = struct{}{}
+	}
+
+	return ret
+}
+
+// ListRoutineGrants returns the routine privileges held by the given account. The join
+// takes the name from information_schema so the grant key matches the resource ID
+// ListRoutines builds, and drops rows naming a routine that is not synced.
+//
+// Grants required:
+//
+//	GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO user@host;
+func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string) ([]*RoutineGrant, error) {
+	q := `SELECT
+			p.User,
+			p.Host,
+			p.Db,
+			r.SPECIFIC_NAME AS routine_name,
+			p.Routine_type,
+			p.Proc_priv
+		FROM mysql.procs_priv p
+		LEFT JOIN information_schema.ROUTINES r
+			ON r.ROUTINE_SCHEMA = p.Db
+			AND r.ROUTINE_NAME = p.Routine_name
+			AND r.ROUTINE_TYPE = p.Routine_type
+		WHERE p.User = ? AND p.Host = ?`
+
+	var rows []*routineGrantRow
+	err := c.db.SelectContext(ctx, &rows, q, user, host)
+	if err != nil {
+		return nil, fmt.Errorf("list routine grants for %s@%s: %w", user, host, err)
+	}
+
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	ambiguous, err := c.ambiguousRoutineNames(ctx, routineGrantSchemas(rows))
+	if err != nil {
+		return nil, err
+	}
+
+	l := ctxzap.Extract(ctx)
+	var ambiguousHit []string
+	ret := make([]*RoutineGrant, 0, len(rows))
+	for _, row := range rows {
+		if !row.Routine.Valid {
+			l.Debug(
+				"routine not found for grant. Ignoring grant",
+				zap.String("database", row.Database),
+				zap.String("routine_type", row.Type),
+			)
+			continue
+		}
+
+		if _, ok := ambiguous[newRoutineKey(row.Database, row.Routine.String)]; ok {
+			// The resource ID stands for both routines, so the grant could not say
+			// which one the account reaches.
+			ambiguousHit = append(ambiguousHit, row.Database+"."+row.Routine.String)
+			continue
+		}
+
+		g := &RoutineGrant{
+			User:     row.User,
+			Host:     row.Host,
+			Database: row.Database,
+			Routine:  row.Routine.String,
+			Type:     row.Type,
+			Privs:    row.Privs,
+		}
+		g.Id = dbResourceID{
+			ResourceTypeID: RoutineType,
+			DatabaseName:   g.Database,
+			ResourceName:   g.Routine,
+		}.String()
+		ret = append(ret, g)
+	}
+
+	if len(ambiguousHit) > 0 {
+		l.Debug(
+			"routine names held as both a procedure and a function. Privileges on them are not synced",
+			zap.String("user", user),
+			zap.String("host", host),
+			zap.Strings("routines", ambiguousHit),
+		)
+	}
+
+	return ret, nil
+}
+
+func routineGrantSchemas(rows []*routineGrantRow) []string {
+	seen := make(map[string]struct{}, len(rows))
+	schemas := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := seen[row.Database]; ok {
+			continue
+		}
+		seen[row.Database] = struct{}{}
+		schemas = append(schemas, row.Database)
+	}
+	return schemas
+}
+
+// routineKey identifies a routine the way MySQL compares one: the schema is
+// case-sensitive and the name is not.
+type routineKey struct {
+	database string
+	name     string
+}
+
+func newRoutineKey(database string, name string) routineKey {
+	return routineKey{database: database, name: strings.ToLower(name)}
+}
+
+// ambiguousRoutineNames returns the names the given schemas hold as both a procedure and
+// a function. A routine resource ID carries no routine type, so those two routines share
+// one ID.
+func (c *Client) ambiguousRoutineNames(ctx context.Context, schemas []string) (map[routineKey]struct{}, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+
+	q, args, err := sqlx.In(`SELECT ROUTINE_SCHEMA, ROUTINE_NAME
+		FROM information_schema.ROUTINES
+		WHERE ROUTINE_SCHEMA IN (?)
+		GROUP BY ROUTINE_SCHEMA, ROUTINE_NAME
+		HAVING COUNT(DISTINCT ROUTINE_TYPE) > 1`, schemas)
+	if err != nil {
+		return nil, fmt.Errorf("build ambiguous routine name query: %w", err)
+	}
+
+	var rows []struct {
+		Database string `db:"ROUTINE_SCHEMA"`
+		Name     string `db:"ROUTINE_NAME"`
+	}
+	if err := c.db.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, fmt.Errorf("resolve ambiguous routine names: %w", err)
+	}
+
+	ambiguous := make(map[routineKey]struct{}, len(rows))
+	for _, r := range rows {
+		ambiguous[newRoutineKey(r.Database, r.Name)] = struct{}{}
+	}
+
+	return ambiguous, nil
+}
+
+// routineGrantRow carries the nullable routine name the LEFT JOIN produces.
+type routineGrantRow struct {
+	User     string         `db:"User"`
+	Host     string         `db:"Host"`
+	Database string         `db:"Db"`
+	Routine  sql.NullString `db:"routine_name"`
+	Type     string         `db:"Routine_type"`
+	Privs    string         `db:"Proc_priv"`
 }
 
 type ProxyGrant struct {
