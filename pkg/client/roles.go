@@ -21,7 +21,7 @@ func (c *Client) GrantRolePrivilege(ctx context.Context, role, user, privilege s
 		grantStmt = fmt.Sprintf("GRANT %s TO %s", roleAccount, userAccount)
 	case "role_assignment_with_grant":
 		grantStmt = fmt.Sprintf("GRANT %s TO %s WITH ADMIN OPTION", roleAccount, userAccount)
-	case "proxy":
+	case proxyPrivilege:
 		grantStmt = fmt.Sprintf("GRANT PROXY ON %s TO %s", roleAccount, userAccount)
 	case "proxy_with_grant":
 		grantStmt = fmt.Sprintf("GRANT PROXY ON %s TO %s WITH GRANT OPTION", roleAccount, userAccount)
@@ -47,7 +47,7 @@ func (c *Client) RevokeRolePrivilege(ctx context.Context, role, user, privilege 
 	switch privilege {
 	case "role_assignment", "role_assignment_with_grant":
 		revokeStmt = fmt.Sprintf("REVOKE %s FROM %s", roleAccount, userAccount)
-	case "proxy", "proxy_with_grant":
+	case proxyPrivilege, "proxy_with_grant":
 		revokeStmt = fmt.Sprintf("REVOKE PROXY ON %s FROM %s", roleAccount, userAccount)
 	default:
 		return fmt.Errorf("unknown privilege: %s", privilege)
