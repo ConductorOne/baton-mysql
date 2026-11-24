@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -111,6 +112,8 @@ func newDbResourceID(in string) (dbResourceID, error) {
 type Client struct {
 	db      *sqlx.DB
 	version string
+
+	ambiguousRoutineSkips atomic.Int64
 }
 
 func (c *Client) IsVersion8() bool {

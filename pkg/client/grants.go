@@ -333,12 +333,15 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 	}
 
 	if len(ambiguousHit) > 0 {
-		l.Warn(
-			"routine names held as both a procedure and a function. Privileges on them are not synced. Rename one of the pair to sync them",
-			zap.String("user", user),
-			zap.String("host", host),
-			zap.Strings("routines", ambiguousHit),
-		)
+		if n := c.ambiguousRoutineSkips.Add(1); n == 1 || n == 10 || n == 100 || n%1000 == 0 {
+			l.Warn(
+				"routine names held as both a procedure and a function. Privileges on them are not synced. Rename one of the pair to sync them",
+				zap.String("user", user),
+				zap.String("host", host),
+				zap.Strings("routines", ambiguousHit),
+				zap.Int64("total_occurrences", n),
+			)
+		}
 	}
 
 	return ret, nil
