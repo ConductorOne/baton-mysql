@@ -3,12 +3,23 @@ package client
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
+)
+
+const procsPrivGrant = "GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO <connector account>"
+
+// erTableAccessDenied is ER_TABLEACCESS_DENIED_ERROR and erColumnAccessDenied is
+// ER_COLUMNACCESS_DENIED_ERROR, which a SELECT raises for a table and for a column.
+const (
+	erTableAccessDenied  = 1142
+	erColumnAccessDenied = 1143
 )
 
 type GlobalGrant struct {
@@ -286,6 +297,10 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 	var rows []*routineGrantRow
 	err := c.db.SelectContext(ctx, &rows, q, user, host)
 	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && (mysqlErr.Number == erTableAccessDenied || mysqlErr.Number == erColumnAccessDenied) {
+			return nil, fmt.Errorf("list routine grants for %s@%s: %w: run %s", user, host, err, procsPrivGrant)
+		}
 		return nil, fmt.Errorf("list routine grants for %s@%s: %w", user, host, err)
 	}
 
