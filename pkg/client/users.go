@@ -132,7 +132,7 @@ func (c *Client) GetUser(ctx context.Context, user string, host string) (*User, 
 
 func (c *Client) getUserGroupedByHostQuery() (*strings.Builder, error) {
 	sb := &strings.Builder{}
-	_, err := sb.WriteString(`SELECT User, GROUP_CONCAT(Host) as Host, 'user' AS user_type FROM mysql.user `)
+	_, err := sb.WriteString(`SELECT User, GROUP_CONCAT(Host ORDER BY Host) as Host, 'user' AS user_type FROM mysql.user `)
 	return sb, err
 }
 
