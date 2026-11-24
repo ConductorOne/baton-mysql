@@ -312,8 +312,6 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 		}
 
 		if _, ok := ambiguous[newRoutineKey(row.Database, row.Routine.String)]; ok {
-			// The resource ID stands for both routines, so the grant could not say
-			// which one the account reaches.
 			ambiguousHit = append(ambiguousHit, row.Database+"."+row.Routine.String)
 			continue
 		}
@@ -335,8 +333,8 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 	}
 
 	if len(ambiguousHit) > 0 {
-		l.Debug(
-			"routine names held as both a procedure and a function. Privileges on them are not synced",
+		l.Warn(
+			"routine names held as both a procedure and a function. Privileges on them are not synced. Rename one of the pair to sync them",
 			zap.String("user", user),
 			zap.String("host", host),
 			zap.Strings("routines", ambiguousHit),
@@ -359,13 +357,14 @@ func routineGrantSchemas(rows []*routineGrantRow) []string {
 	return schemas
 }
 
-// routineKey identifies a routine the way MySQL compares one: the schema is
-// case-sensitive and the name is not.
 type routineKey struct {
 	database string
 	name     string
 }
 
+// newRoutineKey lower-cases the name so that a procs_priv row and an
+// information_schema row for one routine land on the same key, the way the
+// query above matches them. The schema is kept as the server returned it.
 func newRoutineKey(database string, name string) routineKey {
 	return routineKey{database: database, name: strings.ToLower(name)}
 }
@@ -403,7 +402,6 @@ func (c *Client) ambiguousRoutineNames(ctx context.Context, schemas []string) (m
 	return ambiguous, nil
 }
 
-// routineGrantRow carries the nullable routine name the LEFT JOIN produces.
 type routineGrantRow struct {
 	User     string         `db:"User"`
 	Host     string         `db:"Host"`
