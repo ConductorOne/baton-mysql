@@ -2,11 +2,15 @@ package connector
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 func grantsForUserOrRole(
@@ -112,6 +116,14 @@ func listGlobalGrants(
 ) error {
 	u, err := c.GetUser(ctx, user, host)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			ctxzap.Extract(ctx).Debug(
+				"account not found. Ignoring its global grants",
+				zap.String("user", user),
+				zap.String("host", host),
+			)
+			return nil
+		}
 		return fmt.Errorf("baton-mysql: unable to fetch account %s@%s for global grants: %w", user, host, err)
 	}
 

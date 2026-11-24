@@ -283,9 +283,6 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 		u, err := c.GetUser(ctx, r.ProxiedUser, r.ProxiedHost)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				// The proxied account is gone but its row is not. Skipping the
-				// row keeps the account's other proxy grants, which returning
-				// here would discard along with it.
 				ctxzap.Extract(ctx).Debug(
 					"proxied account not found. Ignoring grant",
 					zap.String("proxied_user", r.ProxiedUser),
