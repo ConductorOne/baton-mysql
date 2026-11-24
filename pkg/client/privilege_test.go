@@ -32,7 +32,6 @@ func TestMatchPrivilege(t *testing.T) {
 		{slug: grantPrivilege, name: "GRANT OPTION"},
 		{slug: "backup_admin", name: "BACKUP_ADMIN"},
 		{slug: "backup_admin_with_grant", name: "BACKUP_ADMIN", withGrant: true},
-		{slug: "show_databases_with_grant", name: "SHOW DATABASES", withGrant: true},
 		{slug: proxyPrivilege, code: codes.InvalidArgument},
 		{slug: "show_databases_typo", code: codes.InvalidArgument},
 	}

@@ -27,9 +27,9 @@ func splitGrantSuffix(slug string) (string, bool) {
 	return lowered, false
 }
 
-// matchPrivilege returns the spelling SHOW PRIVILEGES uses for slug.
-// withGrant is true when the entitlement is the *_with_grant form. That clause
-// is not part of the privilege name: GRANT accepts it only after the account.
+// matchPrivilege returns the spelling SHOW PRIVILEGES uses for slug. withGrant
+// reports the *_with_grant form and is returned on its own because the clause
+// is not part of the name; the caller places it in the statement.
 func matchPrivilege(slug string, registered []string) (string, bool, error) {
 	base, withGrant := splitGrantSuffix(slug)
 	if base == proxyPrivilege {
