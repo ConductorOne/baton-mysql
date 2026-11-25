@@ -21,10 +21,11 @@ func titleCase(s string) string {
 
 // Connector implements the ConnectorServer interface for syncing with a MySQL server.
 type Connector struct {
-	client        *client.Client
-	skipDbs       map[string]struct{}
-	expandCols    map[string]struct{}
-	collapseUsers bool
+	client            *client.Client
+	skipDbs           map[string]struct{}
+	expandCols        map[string]struct{}
+	collapseUsers     bool
+	syncRoutineGrants bool
 }
 
 // Metadata returns metadata about the connector. This currently includes the hostname for the server.
@@ -76,11 +77,11 @@ func (c *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.Reso
 		newDatabaseSyncer(c.client, c.skipDbs),
 		newTableSyncer(c.client, c.expandCols),
 		newRoutineSyncer(c.client),
-		newUserSyncer(c.client, c.skipDbs, c.expandCols, c.collapseUsers),
+		newUserSyncer(c.client, c.skipDbs, c.expandCols, c.collapseUsers, c.syncRoutineGrants),
 	}
 
 	if c.client != nil && c.client.IsVersion8() {
-		syncers = append(syncers, newRoleSyncer(c.client, c.skipDbs, c.expandCols))
+		syncers = append(syncers, newRoleSyncer(c.client, c.skipDbs, c.expandCols, c.syncRoutineGrants))
 	}
 
 	if len(c.expandCols) > 0 {
@@ -91,7 +92,14 @@ func (c *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.Reso
 }
 
 // New returns a new MySQL connector.
-func New(ctx context.Context, dsn string, skipDbs []string, expandColumns []string, collapseUsers bool) (*Connector, error) {
+func New(
+	ctx context.Context,
+	dsn string,
+	skipDbs []string,
+	expandColumns []string,
+	collapseUsers bool,
+	syncRoutineGrants bool,
+) (*Connector, error) {
 	c, err := client.New(ctx, dsn)
 	if err != nil {
 		return nil, err
@@ -106,9 +114,10 @@ func New(ctx context.Context, dsn string, skipDbs []string, expandColumns []stri
 		expandCols[table] = struct{}{}
 	}
 	return &Connector{
-		client:        c,
-		skipDbs:       dbs,
-		expandCols:    expandCols,
-		collapseUsers: collapseUsers,
+		client:            c,
+		skipDbs:           dbs,
+		expandCols:        expandCols,
+		collapseUsers:     collapseUsers,
+		syncRoutineGrants: syncRoutineGrants,
 	}, nil
 }

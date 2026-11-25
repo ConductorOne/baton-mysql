@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -18,7 +17,11 @@ const RoutineType = "routine"
 // ErrRoutineGrantNotFound reports that the account held no privilege on the routine.
 var ErrRoutineGrantNotFound = errors.New("no such routine grant")
 
-// erNonexistingProcGrant is ER_NONEXISTING_PROC_GRANT, which REVOKE raises for itself.
+// ErrRoutineNotFound reports that the schema holds no routine under that name, so
+// there is no privilege on it to hold.
+var ErrRoutineNotFound = errors.New("no such routine")
+
+// Named as the MySQL error reference names it, so the number can be checked against it.
 const erNonexistingProcGrant = 1403
 
 type RoutineModel struct {
@@ -187,7 +190,7 @@ func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string)
 
 	switch len(routineTypes) {
 	case 0:
-		return "", fmt.Errorf("routine %s.%s not found: %w", schema, routineName, sql.ErrNoRows)
+		return "", fmt.Errorf("%w: %s.%s", ErrRoutineNotFound, schema, routineName)
 	case 1:
 		return routineTypes[0], nil
 	default:

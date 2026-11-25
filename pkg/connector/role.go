@@ -12,10 +12,11 @@ import (
 )
 
 type roleSyncer struct {
-	resourceType *v2.ResourceType
-	client       *client.Client
-	skipDbs      map[string]struct{}
-	expandCols   map[string]struct{}
+	resourceType      *v2.ResourceType
+	client            *client.Client
+	skipDbs           map[string]struct{}
+	expandCols        map[string]struct{}
+	syncRoutineGrants bool
 }
 
 func (s *roleSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -64,7 +65,7 @@ func (s *roleSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pT
 }
 
 func (s *roleSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	grants, err := grantsForUserOrRole(ctx, s.client, resource, s.skipDbs, s.expandCols, false)
+	grants, err := grantsForUserOrRole(ctx, s.client, resource, s.skipDbs, s.expandCols, false, s.syncRoutineGrants)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -72,12 +73,18 @@ func (s *roleSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *
 	return grants, "", nil, nil
 }
 
-func newRoleSyncer(c *client.Client, skipDbs map[string]struct{}, expandCols map[string]struct{}) *roleSyncer {
+func newRoleSyncer(
+	c *client.Client,
+	skipDbs map[string]struct{},
+	expandCols map[string]struct{},
+	syncRoutineGrants bool,
+) *roleSyncer {
 	return &roleSyncer{
-		resourceType: resourceTypeRole,
-		client:       c,
-		skipDbs:      skipDbs,
-		expandCols:   expandCols,
+		resourceType:      resourceTypeRole,
+		client:            c,
+		skipDbs:           skipDbs,
+		expandCols:        expandCols,
+		syncRoutineGrants: syncRoutineGrants,
 	}
 }
 

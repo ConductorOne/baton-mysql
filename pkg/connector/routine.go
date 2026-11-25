@@ -70,7 +70,6 @@ func newRoutineSyncer(c *client.Client) *routineSyncer {
 	}
 }
 
-// routinePrivileges maps the entitlement privilege ID to the MySQL privilege name.
 var routinePrivileges = map[string]string{
 	"execute":       "EXECUTE",
 	"alter_routine": "ALTER ROUTINE",
@@ -148,7 +147,7 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 
 	err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	switch {
-	case errors.Is(err, client.ErrRoutineGrantNotFound):
+	case errors.Is(err, client.ErrRoutineGrantNotFound), errors.Is(err, client.ErrRoutineNotFound):
 		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
 	case err != nil:
 		return nil, fmt.Errorf("baton-mysql: failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)

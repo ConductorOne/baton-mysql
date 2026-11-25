@@ -15,8 +15,7 @@ import (
 
 const procsPrivGrant = "GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO <connector account>"
 
-// erTableAccessDenied is ER_TABLEACCESS_DENIED_ERROR and erColumnAccessDenied is
-// ER_COLUMNACCESS_DENIED_ERROR, which a SELECT raises for a table and for a column.
+// Named as the MySQL error reference names them, so the numbers can be checked against it.
 const (
 	erTableAccessDenied  = 1142
 	erColumnAccessDenied = 1143
@@ -378,9 +377,8 @@ type routineKey struct {
 	name     string
 }
 
-// newRoutineKey lower-cases the name so that a procs_priv row and an
-// information_schema row for one routine land on the same key, the way the
-// query above matches them. The schema is kept as the server returned it.
+// newRoutineKey lower-cases the name so rows read from different tables for one
+// routine land on the same key. The schema is kept as the server returned it.
 func newRoutineKey(database string, name string) routineKey {
 	return routineKey{database: database, name: strings.ToLower(name)}
 }

@@ -28,10 +28,16 @@ var (
 		field.WithDefaultValue(false),
 		field.WithRequired(false),
 	)
+	SyncRoutineGrants = field.BoolField(
+		"sync-routine-grants",
+		field.WithDescription("Sync privileges held on stored procedures and functions. Requires SELECT on mysql.procs_priv $(BATON_SYNC_ROUTINE_GRANTS)"),
+		field.WithDefaultValue(false),
+		field.WithRequired(false),
+	)
 	// ConfigurationFields defines the external configuration required for the
 	// connector to run. Note: these fields can be marked as optional or
 	// required.
-	ConfigurationFields = []field.SchemaField{ConnectionString, SkipDatabases, ExpandColumns, CollapseUsers}
+	ConfigurationFields = []field.SchemaField{ConnectionString, SkipDatabases, ExpandColumns, CollapseUsers, SyncRoutineGrants}
 )
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.

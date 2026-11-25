@@ -13,11 +13,12 @@ import (
 )
 
 type userSyncer struct {
-	resourceType  *v2.ResourceType
-	client        *client.Client
-	skipDbs       map[string]struct{}
-	expandCols    map[string]struct{}
-	collapseUsers bool
+	resourceType      *v2.ResourceType
+	client            *client.Client
+	skipDbs           map[string]struct{}
+	expandCols        map[string]struct{}
+	collapseUsers     bool
+	syncRoutineGrants bool
 }
 
 func (s *userSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -60,7 +61,7 @@ func (s *userSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pT
 }
 
 func (s *userSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	grants, err := grantsForUserOrRole(ctx, s.client, resource, s.skipDbs, s.expandCols, s.collapseUsers)
+	grants, err := grantsForUserOrRole(ctx, s.client, resource, s.skipDbs, s.expandCols, s.collapseUsers, s.syncRoutineGrants)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -68,13 +69,20 @@ func (s *userSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *
 	return grants, "", nil, nil
 }
 
-func newUserSyncer(c *client.Client, skipDbs map[string]struct{}, expandCols map[string]struct{}, collapseUsers bool) *userSyncer {
+func newUserSyncer(
+	c *client.Client,
+	skipDbs map[string]struct{},
+	expandCols map[string]struct{},
+	collapseUsers bool,
+	syncRoutineGrants bool,
+) *userSyncer {
 	return &userSyncer{
-		resourceType:  resourceTypeUser,
-		client:        c,
-		skipDbs:       skipDbs,
-		expandCols:    expandCols,
-		collapseUsers: collapseUsers,
+		resourceType:      resourceTypeUser,
+		client:            c,
+		skipDbs:           skipDbs,
+		expandCols:        expandCols,
+		collapseUsers:     collapseUsers,
+		syncRoutineGrants: syncRoutineGrants,
 	}
 }
 

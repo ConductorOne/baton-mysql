@@ -121,6 +121,11 @@
       "name": "collapse-users",
       "description": "Combine user@host pairs into a single user@[hosts...] identity $(BATON_COLLAPSE_USERS)",
       "boolField": {}
+    },
+    {
+      "name": "sync-routine-grants",
+      "description": "Sync privileges held on stored procedures and functions. Requires SELECT on mysql.procs_priv $(BATON_SYNC_ROUTINE_GRANTS)",
+      "boolField": {}
     }
   ]
 }

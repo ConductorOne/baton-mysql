@@ -18,6 +18,7 @@ func grantsForUserOrRole(
 	skipDbs map[string]struct{},
 	expandCols map[string]struct{},
 	collapseUsers bool,
+	syncRoutineGrants bool,
 ) ([]*v2.Grant, error) {
 	var ret []*v2.Grant
 	grantMap := make(map[string]struct{})
@@ -58,9 +59,11 @@ func grantsForUserOrRole(
 			return nil, err
 		}
 
-		err = listRoutineGrants(ctx, user, host, grantMap, skipDbs, c)
-		if err != nil {
-			return nil, err
+		if syncRoutineGrants {
+			err = listRoutineGrants(ctx, user, host, grantMap, skipDbs, c)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		err = listProxyGrants(ctx, user, host, grantMap, c)

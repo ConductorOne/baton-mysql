@@ -11,7 +11,7 @@ This document provides information needed to set up and use the connector.
 | **Server** | The MySQL server instance itself; root of the resource hierarchy |
 | **Database** | Individual databases hosted on the server; scoped privilege assignments |
 | **Table** | Tables within databases; table-level privilege grants |
-| **Routine** | Stored procedures and functions; `EXECUTE`, `ALTER ROUTINE` and `GRANT OPTION` privilege grants |
+| **Routine** | Stored procedures and functions; `EXECUTE`, `ALTER ROUTINE` and `GRANT OPTION` privilege grants (grants require `--sync-routine-grants`) |
 | **User** | MySQL accounts (`user@host`); principal identities in the access graph |
 | **Role** | Named role objects (MySQL 8+ only); role-to-user assignment grants |
 | **Column** | Individual table columns (optional, requires `--expand-columns`); column-level privilege grants |
@@ -51,6 +51,15 @@ The connection string format is: `username:password@tcp(hostname:3306)/`
 
 - **MySQL 5.7 and 8.x** are supported.
 - Role sync and role grant/revoke are available on **MySQL 8+** only. The connector detects the server version at runtime and enables role support automatically.
+
+### Routine Privilege Grants
+
+Who holds a privilege on a stored procedure or function is read from `mysql.procs_priv`,
+which the connector queries only with `--sync-routine-grants`. The flag is off by default
+because the table needs its own `SELECT` grant, which an existing connector account set up
+from the Advanced Setup instructions does not hold. With the flag off, routines and their
+entitlements sync as before and carry no grants. With it on, a denied read fails the sync
+and names the `GRANT` statement to run.
 
 ### Routines That Share a Name
 
