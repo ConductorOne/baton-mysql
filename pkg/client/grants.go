@@ -310,13 +310,15 @@ type RoleGrant struct {
 	FromHosts sql.NullString `db:"from_hosts"`
 }
 
-// ListRoleGrants returns the roles held by the given account.
+// ListRoleGrants returns the roles held by the given account. collapseUsers
+// spells a held account's id the way the user syncer emits it; holderCollapsed
+// reports that the account being synced is itself a collapsed user.
 //
 // Grants required:
 //
 //	GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO user@host;
 //	GRANT SELECT (User, Host, authentication_string) ON mysql.user TO user@host;
-func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, collapseUsers bool) ([]*RoleGrant, error) {
+func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, collapseUsers, holderCollapsed bool) ([]*RoleGrant, error) {
 	q := `SELECT
 			e.FROM_HOST,
 			e.FROM_USER,
@@ -343,7 +345,7 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, c
 
 	ret := make([]*RoleGrant, 0, len(edges))
 	for _, e := range edges {
-		if e.heldBySameAccount(collapseUsers) {
+		if e.heldBySameAccount(holderCollapsed) {
 			continue
 		}
 
@@ -357,10 +359,10 @@ func (c *Client) ListRoleGrants(ctx context.Context, user string, host string, c
 // heldBySameAccount reports whether the edge grants an account to itself. What
 // counts as one account follows the sync: normally the user and the host
 // together, since two accounts can share a user name and differ only in host and
-// that membership is real, but under collapseUsers those hosts are one identity
-// and the membership is the identity holding itself.
-func (r *RoleGrant) heldBySameAccount(collapseUsers bool) bool {
-	if collapseUsers && r.RoleType == UserType {
+// that membership is real. Only when the holder is itself a collapsed user are
+// those hosts one identity, and the membership the identity holding itself.
+func (r *RoleGrant) heldBySameAccount(holderCollapsed bool) bool {
+	if holderCollapsed && r.RoleType == UserType {
 		return r.FromUser == r.ToUser
 	}
 	return r.FromUser == r.ToUser && r.FromHost == r.ToHost

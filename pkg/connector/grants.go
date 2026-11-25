@@ -33,9 +33,12 @@ func grantsForUserOrRole(
 		return nil, fmt.Errorf("baton-mysql: malformed principal ID %s: %w", resource.Id.Resource, err)
 	}
 
+	// Roles are never collapsed, so only a user principal carries a multi-host ID.
+	holderCollapsed := collapseUsers && resource.Id.ResourceType == resourceTypeUser.Id
+
 	hosts := []string{host}
 	// If we are collapsing users, we will want to split the host portion of the ID to inspect each real user's grants
-	if collapseUsers {
+	if holderCollapsed {
 		hosts = strings.Split(host, ",")
 	}
 
@@ -66,7 +69,7 @@ func grantsForUserOrRole(
 		}
 
 		if c.IsVersion8() {
-			err = listRoleGrants(ctx, user, host, grantMap, c, collapseUsers)
+			err = listRoleGrants(ctx, user, host, grantMap, c, collapseUsers, holderCollapsed)
 			if err != nil {
 				return nil, err
 			}
@@ -260,8 +263,14 @@ func listProxyGrants(ctx context.Context, user, host string, grantMap map[string
 }
 
 // listRoleGrants returns a map keyed by entitlement ID for granted role edges.
-func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client, collapseUsers bool) error {
-	roleGrants, err := c.ListRoleGrants(ctx, user, host, collapseUsers)
+func listRoleGrants(
+	ctx context.Context,
+	user, host string,
+	grantMap map[string]struct{},
+	c *client.Client,
+	collapseUsers, holderCollapsed bool,
+) error {
+	roleGrants, err := c.ListRoleGrants(ctx, user, host, collapseUsers, holderCollapsed)
 	if err != nil {
 		return err
 	}
