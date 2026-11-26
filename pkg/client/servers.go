@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
@@ -40,23 +39,33 @@ func (c *Client) ExecContext(ctx context.Context, query string) (sql.Result, err
 }
 
 func (c *Client) GrantServerPrivilege(ctx context.Context, user string, privilege string) error {
+	name, withGrant, err := c.SQLPrivilege(ctx, privilege)
+	if err != nil {
+		return err
+	}
+
 	userGrant, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
-	query := fmt.Sprintf("GRANT %s ON *.* TO %s", strings.ToUpper(privilege), userGrant)
+	query := withGrantOption(fmt.Sprintf("GRANT %s ON *.* TO %s", name, userGrant), withGrant)
 	_, err = c.db.ExecContext(ctx, query)
 	return err
 }
 
 func (c *Client) RevokeServerPrivilege(ctx context.Context, user string, privilege string) error {
+	name, _, err := c.SQLPrivilege(ctx, privilege)
+	if err != nil {
+		return err
+	}
+
 	userRevoke, err := quoteAccounts(user)
 	if err != nil {
 		return err
 	}
 
-	query := fmt.Sprintf("REVOKE %s ON *.* FROM %s", strings.ToUpper(privilege), userRevoke)
+	query := fmt.Sprintf("REVOKE %s ON *.* FROM %s", name, userRevoke)
 	_, err = c.db.ExecContext(ctx, query)
 	return err
 }

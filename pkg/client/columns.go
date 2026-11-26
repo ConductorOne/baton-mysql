@@ -91,7 +91,7 @@ func (c *Client) GrantColumnPrivilege(ctx context.Context, table string, column 
 	}
 
 	var privileges []string
-	if strings.ToLower(privilege) == "grant" {
+	if strings.ToLower(privilege) == grantPrivilege {
 		privileges = []string{"SELECT", "INSERT", "UPDATE", "REFERENCES"}
 	} else {
 		privileges = []string{strings.ToUpper(privilege)}
@@ -125,7 +125,7 @@ func (c *Client) RevokeColumnPrivilege(ctx context.Context, table string, column
 	}
 
 	var privileges []string
-	if strings.ToLower(privilege) == "grant" {
+	if strings.ToLower(privilege) == grantPrivilege {
 		privileges = []string{"SELECT", "INSERT", "UPDATE", "REFERENCES"}
 	} else {
 		privileges = []string{strings.ToUpper(privilege)}

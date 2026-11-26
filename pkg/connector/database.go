@@ -118,7 +118,6 @@ func extractDatabasePrivilegeAndDb(entitlementID string) (string, string) {
 
 	privilegePart := parts[1]
 	database := parts[3]
-	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_", " "))
 
-	return priv, database
+	return privilegePart, database
 }

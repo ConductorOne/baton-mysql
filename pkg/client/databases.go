@@ -84,7 +84,12 @@ func (c *Client) GrantDatabasePrivilege(ctx context.Context, database string, us
 		return err
 	}
 
-	query := fmt.Sprintf("GRANT %s ON %s.* TO %s", strings.ToUpper(privilege), escapedDB, userGrant)
+	name, withGrant, err := c.SQLPrivilege(ctx, privilege)
+	if err != nil {
+		return err
+	}
+
+	query := withGrantOption(fmt.Sprintf("GRANT %s ON %s.* TO %s", name, escapedDB, userGrant), withGrant)
 	_, err = c.db.ExecContext(ctx, query)
 	return err
 }
@@ -100,7 +105,12 @@ func (c *Client) RevokeDatabasePrivilege(ctx context.Context, database string, u
 		return err
 	}
 
-	query := fmt.Sprintf("REVOKE %s ON %s.* FROM %s", strings.ToUpper(privilege), escapedDB, userRevoke)
+	name, _, err := c.SQLPrivilege(ctx, privilege)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("REVOKE %s ON %s.* FROM %s", name, escapedDB, userRevoke)
 	_, err = c.db.ExecContext(ctx, query)
 	return err
 }

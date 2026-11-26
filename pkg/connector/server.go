@@ -9,6 +9,8 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type serverSyncer struct {
@@ -71,7 +73,10 @@ func newServerSyncer(c *client.Client) *serverSyncer {
 }
 
 func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	privilege := extractServerPrivilege(entitlement.Id)
+	privilege, err := serverPrivilegeSlug(entitlement.Id)
+	if err != nil {
+		return nil, err
+	}
 
 	userStr, err := principalAccount(principal.Id)
 	if err != nil {
@@ -87,7 +92,10 @@ func (s *serverSyncer) Grant(ctx context.Context, principal *v2.Resource, entitl
 }
 
 func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	privilege := extractServerPrivilege(grant.Entitlement.Id)
+	privilege, err := serverPrivilegeSlug(grant.Entitlement.Id)
+	if err != nil {
+		return nil, err
+	}
 
 	userStr, err := principalAccount(grant.Principal.Id)
 	if err != nil {
@@ -102,17 +110,10 @@ func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	return nil, nil
 }
 
-func extractServerPrivilege(entitlementID string) string {
+func serverPrivilegeSlug(entitlementID string) (string, error) {
 	parts := strings.Split(entitlementID, ":")
-	if len(parts) < 3 {
-		return ""
+	if len(parts) < 3 || parts[1] == "" {
+		return "", status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", entitlementID)
 	}
-
-	privilegePart := parts[1]
-	priv := strings.ToUpper(strings.ReplaceAll(privilegePart, "_WITH_GRANT", ""))
-
-	if strings.Contains(privilegePart, "_with_grant") {
-		return priv + " WITH GRANT OPTION"
-	}
-	return priv
+	return parts[1], nil
 }
