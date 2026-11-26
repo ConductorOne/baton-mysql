@@ -18,6 +18,7 @@ func grantsForUserOrRole(
 	skipDbs map[string]struct{},
 	expandCols map[string]struct{},
 	collapseUsers bool,
+	syncRoutineGrants bool,
 ) ([]*v2.Grant, error) {
 	var ret []*v2.Grant
 	grantMap := make(map[string]struct{})
@@ -56,6 +57,13 @@ func grantsForUserOrRole(
 		err = listColumnGrants(ctx, user, host, grantMap, skipDbs, expandCols, c)
 		if err != nil {
 			return nil, err
+		}
+
+		if syncRoutineGrants {
+			err = listRoutineGrants(ctx, user, host, grantMap, skipDbs, c)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		err = listProxyGrants(ctx, user, host, grantMap, c)
@@ -231,6 +239,33 @@ func listColumnGrants(
 
 		for priv := range g.GetPrivs(ctx) {
 			entitlementID = fmt.Sprintf("%s:%s", strings.ToLower(priv), grantID)
+			grantMap[entitlementID] = struct{}{}
+		}
+	}
+
+	return nil
+}
+
+// listRoutineGrants returns a map keyed by entitlement ID for granted routine privileges.
+func listRoutineGrants(
+	ctx context.Context,
+	user, host string,
+	grantMap map[string]struct{},
+	skipDbs map[string]struct{},
+	c *client.Client,
+) error {
+	routineGrants, err := c.ListRoutineGrants(ctx, user, host)
+	if err != nil {
+		return fmt.Errorf("baton-mysql: %w", err)
+	}
+
+	var entitlementID string
+	for _, grant := range routineGrants {
+		if _, ok := skipDbs[grant.Database]; ok {
+			continue
+		}
+		for priv := range grant.GetPrivs(ctx) {
+			entitlementID = fmt.Sprintf("%s:%s", strings.ToLower(priv), grant.Id)
 			grantMap[entitlementID] = struct{}{}
 		}
 	}

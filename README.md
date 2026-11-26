@@ -98,7 +98,13 @@ GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, C
 GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO conductorone;
 ```
 
-3. Grant your new user SELECT on each of the databases that you would like the connector to scan. In all likelihood, you will want this to be all databases. The connector does not look at any data within the databases, but `SELECT` is required in order to introspect the various schemas.
+3. Only if you run the connector with `--sync-routine-grants` (or `BATON_SYNC_ROUTINE_GRANTS=true`), make sure it can read the routine privilege table. The `GRANT SELECT ON *.*` in step 4 already covers it; run the statement below only for an account scoped more narrowly than that. Without the flag the connector does not read this table, routines sync without their privilege grants, and it refuses to grant or revoke them.
+
+```mysql
+GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO conductorone;
+```
+
+4. Grant your new user SELECT on each of the databases that you would like the connector to scan. In all likelihood, you will want this to be all databases. The connector does not look at any data within the databases, but `SELECT` is required in order to introspect the various schemas.
 
 ```mysql
 GRANT SELECT ON *.* TO conductorone;
@@ -154,6 +160,7 @@ Flags:
       --log-level string           The log level: debug, info, warn, error ($BATON_LOG_LEVEL) (default "info")
   -p, --provisioning               This must be set in order for provisioning actions to be enabled. ($BATON_PROVISIONING)
       --skip-database strings      Skip syncing privileges from these databases ($BATON_SKIP_DATABASE)
+      --sync-routine-grants        Sync privileges held on stored procedures and functions. Requires SELECT on mysql.procs_priv $(BATON_SYNC_ROUTINE_GRANTS)
   -v, --version                    version for baton-mysql
 
 Use "baton-mysql [command] --help" for more information about a command.

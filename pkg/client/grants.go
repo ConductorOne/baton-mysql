@@ -2,10 +2,25 @@ package client
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
+)
+
+const procsPrivGrant = "GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) " +
+	"ON mysql.procs_priv TO <connector account>, unless the account already holds " +
+	"GRANT SELECT ON *.*, which covers the table"
+
+// Named as the MySQL error reference names them, so the numbers can be checked against it.
+const (
+	erTableAccessDenied  = 1142
+	erColumnAccessDenied = 1143
 )
 
 type GlobalGrant struct {
@@ -229,6 +244,200 @@ func (c *Client) ListColumnGrants(ctx context.Context, user string, host string)
 	}
 
 	return ret, nil
+}
+
+type RoutineGrant struct {
+	Id       string
+	User     string
+	Host     string
+	Database string
+	Routine  string
+	Type     string
+	Privs    string
+}
+
+// GetPrivs parses the routine grant data from mysql.
+func (u *RoutineGrant) GetPrivs(ctx context.Context) map[string]struct{} {
+	ret := make(map[string]struct{})
+
+	privs := strings.Split(u.Privs, ",")
+	for _, priv := range privs {
+		priv := strings.ReplaceAll(strings.TrimSpace(priv), " ", "_")
+		if priv == "" {
+			continue
+		}
+
+		ret[priv] = struct{}{}
+	}
+
+	return ret
+}
+
+// ListRoutineGrants returns the routine privileges held by the given account. The join
+// takes the name from information_schema so the grant key matches the resource ID
+// ListRoutines builds, and drops rows naming a routine that is not synced.
+//
+// Grants required:
+//
+//	GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO user@host;
+func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string) ([]*RoutineGrant, error) {
+	q := `SELECT
+			p.User,
+			p.Host,
+			p.Db,
+			r.SPECIFIC_NAME AS routine_name,
+			p.Routine_type,
+			p.Proc_priv
+		FROM mysql.procs_priv p
+		LEFT JOIN information_schema.ROUTINES r
+			ON r.ROUTINE_SCHEMA = p.Db
+			AND r.ROUTINE_NAME = p.Routine_name
+			AND r.ROUTINE_TYPE = p.Routine_type
+		WHERE p.User = ? AND p.Host = ?`
+
+	var rows []*routineGrantRow
+	err := c.db.SelectContext(ctx, &rows, q, user, host)
+	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && (mysqlErr.Number == erTableAccessDenied || mysqlErr.Number == erColumnAccessDenied) {
+			return nil, fmt.Errorf("list routine grants for %s@%s: %w: run %s", user, host, err, procsPrivGrant)
+		}
+		return nil, fmt.Errorf("list routine grants for %s@%s: %w", user, host, err)
+	}
+
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	ambiguous, err := c.ambiguousRoutineNames(ctx, routineGrantSchemas(rows))
+	if err != nil {
+		return nil, err
+	}
+
+	l := ctxzap.Extract(ctx)
+	ret := make([]*RoutineGrant, 0, len(rows))
+	for _, row := range rows {
+		if !row.Routine.Valid {
+			l.Debug(
+				"routine not found for grant. Ignoring grant",
+				zap.String("database", row.Database),
+				zap.String("routine_type", row.Type),
+			)
+			continue
+		}
+
+		name := row.Database + "." + row.Routine.String
+
+		// A routine resource ID joins the schema and the routine with a dot and is
+		// read back by splitting on every dot, so a schema whose own name holds one
+		// resolves to a different routine than this row names. The grant would point
+		// at a resource the sync never emits.
+		if strings.Contains(row.Database, ".") {
+			if n, report := c.skippedDottedSchemas.record(name); report {
+				l.Warn(
+					"schema name contains a dot, so privileges on its routines cannot be addressed by resource ID and are not synced. Rename the schema to sync them",
+					zap.String("routine", name),
+					zap.Int64("total_occurrences", n),
+				)
+			}
+			continue
+		}
+
+		key := newRoutineKey(row.Database, row.Routine.String)
+		if _, ok := ambiguous[key]; ok {
+			if n, report := c.skippedAmbiguousRoutines.record(key.database + "." + key.name); report {
+				l.Warn(
+					"routine name held as both a procedure and a function. Privileges on it are not synced for any account. Rename one of the pair to sync them",
+					zap.String("routine", name),
+					zap.Int64("total_occurrences", n),
+				)
+			}
+			continue
+		}
+
+		g := &RoutineGrant{
+			User:     row.User,
+			Host:     row.Host,
+			Database: row.Database,
+			Routine:  row.Routine.String,
+			Type:     row.Type,
+			Privs:    row.Privs,
+		}
+		g.Id = dbResourceID{
+			ResourceTypeID: RoutineType,
+			DatabaseName:   g.Database,
+			ResourceName:   g.Routine,
+		}.String()
+		ret = append(ret, g)
+	}
+
+	return ret, nil
+}
+
+func routineGrantSchemas(rows []*routineGrantRow) []string {
+	seen := make(map[string]struct{}, len(rows))
+	schemas := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := seen[row.Database]; ok {
+			continue
+		}
+		seen[row.Database] = struct{}{}
+		schemas = append(schemas, row.Database)
+	}
+	return schemas
+}
+
+type routineKey struct {
+	database string
+	name     string
+}
+
+// newRoutineKey lower-cases the name so rows read from different tables for one
+// routine land on the same key. The schema is kept as the server returned it.
+func newRoutineKey(database string, name string) routineKey {
+	return routineKey{database: database, name: strings.ToLower(name)}
+}
+
+// ambiguousRoutineNames returns the names the given schemas hold as both a procedure and
+// a function. A routine resource ID carries no routine type, so those two routines share
+// one ID.
+func (c *Client) ambiguousRoutineNames(ctx context.Context, schemas []string) (map[routineKey]struct{}, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+
+	q, args, err := sqlx.In(`SELECT ROUTINE_SCHEMA, ROUTINE_NAME
+		FROM information_schema.ROUTINES
+		WHERE ROUTINE_SCHEMA IN (?)
+		GROUP BY ROUTINE_SCHEMA, ROUTINE_NAME
+		HAVING COUNT(DISTINCT ROUTINE_TYPE) > 1`, schemas)
+	if err != nil {
+		return nil, fmt.Errorf("build ambiguous routine name query: %w", err)
+	}
+
+	var rows []struct {
+		Database string `db:"ROUTINE_SCHEMA"`
+		Name     string `db:"ROUTINE_NAME"`
+	}
+	if err := c.db.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, fmt.Errorf("resolve ambiguous routine names: %w", err)
+	}
+
+	ambiguous := make(map[routineKey]struct{}, len(rows))
+	for _, r := range rows {
+		ambiguous[newRoutineKey(r.Database, r.Name)] = struct{}{}
+	}
+
+	return ambiguous, nil
+}
+
+type routineGrantRow struct {
+	User     string         `db:"User"`
+	Host     string         `db:"Host"`
+	Database string         `db:"Db"`
+	Routine  sql.NullString `db:"routine_name"`
+	Type     string         `db:"Routine_type"`
+	Privs    string         `db:"Proc_priv"`
 }
 
 type ProxyGrant struct {

@@ -56,7 +56,14 @@ func getConnector(ctx context.Context, v *viper.Viper) (sdkTypes.ConnectorServer
 		return nil, err
 	}
 
-	cb, err := connector.New(ctx, v.GetString(ConnectionString.FieldName), v.GetStringSlice(SkipDatabases.FieldName), v.GetStringSlice(ExpandColumns.FieldName), v.GetBool(CollapseUsers.FieldName))
+	cb, err := connector.New(
+		ctx,
+		v.GetString(ConnectionString.FieldName),
+		v.GetStringSlice(SkipDatabases.FieldName),
+		v.GetStringSlice(ExpandColumns.FieldName),
+		v.GetBool(CollapseUsers.FieldName),
+		v.GetBool(SyncRoutineGrants.FieldName),
+	)
 	if err != nil {
 		l.Error("error creating connector builder", zap.Error(err))
 		return nil, err

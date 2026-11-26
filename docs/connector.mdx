@@ -96,6 +96,13 @@ The MySQL connector syncs the following resources:
     ```
   </Step>
   <Step>
+    Only if you run the connector with `--sync-routine-grants` (or `BATON_SYNC_ROUTINE_GRANTS=true`), make sure it can read the routine privilege table. The `GRANT SELECT ON *.*` in the next step already covers it; run the statement below only for an account scoped more narrowly than that. Without the flag the connector does not read this table, routines sync without their privilege grants, and it refuses to grant or revoke them.
+
+    ```sql
+    GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO conductorone;
+    ```
+  </Step>
+  <Step>
     Grant `SELECT` on all databases. This grant is required: the connector uses it to list databases and introspect their schemas, and it covers `mysql.proxies_priv`, which the column grants above do not include. The connector does not read the data in your tables.
 
     ```sql
@@ -188,6 +195,7 @@ stringData:
   # BATON_SKIP_DATABASE: "performance_schema,information_schema"
   # BATON_EXPAND_COLUMNS: "mydb.mytable,otherdb.othertable"
   # BATON_COLLAPSE_USERS: "true"
+  # BATON_SYNC_ROUTINE_GRANTS: "true"
 ```
 
 The supported environment variables are:
@@ -196,8 +204,16 @@ The supported environment variables are:
 - **BATON_SKIP_DATABASE**: Comma-separated list of database names to exclude from the sync.
 - **BATON_EXPAND_COLUMNS**: Comma-separated list of tables (in `db.table` format) whose column-level privileges should be surfaced as individual entitlements.
 - **BATON_COLLAPSE_USERS**: When `true`, combines `user@host` pairs that share the same username into a single identity.
+- **BATON_SYNC_ROUTINE_GRANTS**: When `true`, syncs the privileges held on stored procedures and functions. Requires `SELECT` on `mysql.procs_priv`.
 
 {/* AUTO-GENERATED:END - config-params */}
+
+`BATON_SYNC_ROUTINE_GRANTS` is off by default so that an upgrade changes nothing for an
+account that cannot read `mysql.procs_priv`. With it off, routines and their entitlements
+still sync, they carry no grants, and the connector refuses to grant or revoke a routine
+privilege rather than make a change the next sync would undo. Turning it off after it has
+been on makes the next sync report no routine grants, which ConductorOne reads as a
+revocation of every one of them.
 
 To let ConductorOne provision access with this connector, add the following line to the secret's `stringData`. Without it, the connector syncs but rejects grant, revoke, account creation, and account deletion requests.
 
