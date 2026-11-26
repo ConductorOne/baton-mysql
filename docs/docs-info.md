@@ -52,6 +52,19 @@ The connection string format is: `username:password@tcp(hostname:3306)/`
 - **MySQL 5.7 and 8.x** are supported.
 - Role sync and role grant/revoke are available on **MySQL 8+** only. The connector detects the server version at runtime and enables role support automatically.
 
+### Privileges Held With GRANT OPTION
+
+A privilege held `WITH GRANT OPTION` is reported as one entitlement,
+`<privilege>_with_grant`, and the plain `<privilege>` entitlement is not reported for
+that account at the same scope. The two are alternatives, not layers: an account granted
+`BACKUP_ADMIN ON *.* WITH GRANT OPTION` holds `backup_admin_with_grant` and nothing else,
+because MySQL stores one row and marks it.
+
+Granting `<privilege>_with_grant` adds the `WITH GRANT OPTION` clause to the statement.
+Revoking it removes the privilege, and the grant option with it, because that is the
+access the entitlement stands for. To leave an account holding a privilege without the
+grant option, revoke `<privilege>_with_grant` and grant `<privilege>`.
+
 ### API Documentation Links
 
 - [MySQL 8.0 Reference Manual](https://dev.mysql.com/doc/refman/8.0/en/)

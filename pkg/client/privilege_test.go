@@ -16,6 +16,7 @@ func TestMatchPrivilege(t *testing.T) {
 		"Create temporary tables",
 		"Grant option",
 		"BACKUP_ADMIN",
+		"NDB_STORED_USER",
 		"Proxy",
 	}
 
@@ -32,13 +33,17 @@ func TestMatchPrivilege(t *testing.T) {
 		{slug: grantPrivilege, name: "GRANT OPTION"},
 		{slug: "backup_admin", name: "BACKUP_ADMIN"},
 		{slug: "backup_admin_with_grant", name: "BACKUP_ADMIN", withGrant: true},
+		// The published slug is misspelled and cannot be renamed without re-keying
+		// every grant that holds it, so the alias resolves it here instead.
+		{slug: "nbd_stored_user", name: "NDB_STORED_USER"},
+		{slug: "nbd_stored_user_with_grant", name: "NDB_STORED_USER", withGrant: true},
 		{slug: proxyPrivilege, code: codes.InvalidArgument},
 		{slug: "show_databases_typo", code: codes.InvalidArgument},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.slug, func(t *testing.T) {
-			name, withGrant, err := matchPrivilege(tt.slug, registered)
+			name, withGrant, err := MatchPrivilege(tt.slug, registered)
 			if tt.code != codes.OK {
 				require.Error(t, err)
 				require.Equal(t, tt.code, status.Code(err))

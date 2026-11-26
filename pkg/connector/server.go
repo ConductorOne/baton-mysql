@@ -9,6 +9,8 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type serverSyncer struct {
@@ -111,7 +113,7 @@ func (s *serverSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 func serverPrivilegeSlug(entitlementID string) (string, error) {
 	parts := strings.Split(entitlementID, ":")
 	if len(parts) < 3 || parts[1] == "" {
-		return "", fmt.Errorf("invalid entitlement ID: %s", entitlementID)
+		return "", status.Errorf(codes.InvalidArgument, "baton-mysql: invalid entitlement ID: %s", entitlementID)
 	}
 	return parts[1], nil
 }

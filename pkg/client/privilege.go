@@ -27,10 +27,17 @@ func splitGrantSuffix(slug string) (string, bool) {
 	return lowered, false
 }
 
-// matchPrivilege returns the spelling SHOW PRIVILEGES uses for slug. withGrant
+// privilegeAliases maps a published entitlement slug to the key of the privilege the
+// server registers, for a slug whose spelling cannot be corrected. The slug is part of
+// the entitlement ID, so renaming it would re-key every grant that holds it.
+var privilegeAliases = map[string]string{
+	"nbdstoreduser": "ndbstoreduser",
+}
+
+// MatchPrivilege returns the spelling SHOW PRIVILEGES uses for slug. withGrant
 // reports the *_with_grant form and is returned on its own because the clause
 // is not part of the name; the caller places it in the statement.
-func matchPrivilege(slug string, registered []string) (string, bool, error) {
+func MatchPrivilege(slug string, registered []string) (string, bool, error) {
 	base, withGrant := splitGrantSuffix(slug)
 	if base == proxyPrivilege {
 		return "", false, status.Error(codes.InvalidArgument, "proxy is granted on an account, not on *.*")
@@ -39,6 +46,9 @@ func matchPrivilege(slug string, registered []string) (string, bool, error) {
 	key := privilegeKey(base)
 	if key == grantPrivilege {
 		key = "grantoption"
+	}
+	if aliased, ok := privilegeAliases[key]; ok {
+		key = aliased
 	}
 	for _, name := range registered {
 		if privilegeKey(name) == key {
@@ -74,7 +84,7 @@ func (c *Client) SQLPrivilege(ctx context.Context, slug string) (string, bool, e
 	if err != nil {
 		return "", false, err
 	}
-	return matchPrivilege(slug, names)
+	return MatchPrivilege(slug, names)
 }
 
 func withGrantOption(query string, withGrant bool) string {
