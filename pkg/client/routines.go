@@ -17,8 +17,8 @@ const RoutineType = "routine"
 // ErrRoutineGrantNotFound reports that the account held no privilege on the routine.
 var ErrRoutineGrantNotFound = errors.New("no such routine grant")
 
-// ErrRoutineNotFound reports that the schema holds no routine under that name, so
-// there is no privilege on it to hold.
+// ErrRoutineNotFound reports that the connector account can see no routine under that
+// name in the schema. It does not report that the routine is gone; see GetRoutineType.
 var ErrRoutineNotFound = errors.New("no such routine")
 
 // Named as the MySQL error reference names it, so the number can be checked against it.
@@ -175,6 +175,12 @@ func (c *Client) RevokeRoutinePrivilege(ctx context.Context, privilege string, s
 
 // GetRoutineType resolves whether a routine is a PROCEDURE or a FUNCTION, which the GRANT
 // and REVOKE statements need and the routine resource ID does not carry.
+//
+// The query returns a row only for a routine the connector account holds a privilege on,
+// so no rows means the account cannot see the routine. That covers a routine that was
+// dropped and a routine the account simply cannot reach, and the two are indistinguishable
+// here. ErrRoutineNotFound is therefore an error for the caller to report, never a reason
+// to answer that a privilege on it is already revoked.
 func (c *Client) GetRoutineType(ctx context.Context, schema, routineName string) (string, error) {
 	query := `
 		SELECT DISTINCT ROUTINE_TYPE

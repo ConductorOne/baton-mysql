@@ -13,7 +13,9 @@ import (
 	"go.uber.org/zap"
 )
 
-const procsPrivGrant = "GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO <connector account>"
+const procsPrivGrant = "GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) " +
+	"ON mysql.procs_priv TO <connector account>, unless the account already holds " +
+	"GRANT SELECT ON *.*, which covers the table"
 
 // Named as the MySQL error reference names them, so the numbers can be checked against it.
 const (
@@ -313,7 +315,6 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 	}
 
 	l := ctxzap.Extract(ctx)
-	var unreported []string
 	ret := make([]*RoutineGrant, 0, len(rows))
 	for _, row := range rows {
 		if !row.Routine.Valid {
@@ -325,10 +326,31 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 			continue
 		}
 
+		name := row.Database + "." + row.Routine.String
+
+		// A routine resource ID joins the schema and the routine with a dot and is
+		// read back by splitting on every dot, so a schema whose own name holds one
+		// resolves to a different routine than this row names. The grant would point
+		// at a resource the sync never emits.
+		if strings.Contains(row.Database, ".") {
+			if n, report := c.skippedDottedSchemas.record(name); report {
+				l.Warn(
+					"schema name contains a dot, so privileges on its routines cannot be addressed by resource ID and are not synced. Rename the schema to sync them",
+					zap.String("routine", name),
+					zap.Int64("total_occurrences", n),
+				)
+			}
+			continue
+		}
+
 		key := newRoutineKey(row.Database, row.Routine.String)
 		if _, ok := ambiguous[key]; ok {
-			if _, reported := c.reportedAmbiguousRoutines.LoadOrStore(key, struct{}{}); !reported {
-				unreported = append(unreported, row.Database+"."+row.Routine.String)
+			if n, report := c.skippedAmbiguousRoutines.record(key.database + "." + key.name); report {
+				l.Warn(
+					"routine name held as both a procedure and a function. Privileges on it are not synced for any account. Rename one of the pair to sync them",
+					zap.String("routine", name),
+					zap.Int64("total_occurrences", n),
+				)
 			}
 			continue
 		}
@@ -347,13 +369,6 @@ func (c *Client) ListRoutineGrants(ctx context.Context, user string, host string
 			ResourceName:   g.Routine,
 		}.String()
 		ret = append(ret, g)
-	}
-
-	if len(unreported) > 0 {
-		l.Warn(
-			"routine names held as both a procedure and a function. Privileges on them are not synced for any account. Rename one of the pair to sync them",
-			zap.Strings("routines", unreported),
-		)
 	}
 
 	return ret, nil

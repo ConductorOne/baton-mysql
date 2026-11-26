@@ -98,7 +98,7 @@ GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, C
 GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO conductorone;
 ```
 
-3. Only if you run the connector with `--sync-routine-grants` (or `BATON_SYNC_ROUTINE_GRANTS=true`), grant it read access to the routine privilege table. Without the flag the connector does not read this table, and routines sync without their privilege grants.
+3. Only if you run the connector with `--sync-routine-grants` (or `BATON_SYNC_ROUTINE_GRANTS=true`), make sure it can read the routine privilege table. The `GRANT SELECT ON *.*` in step 4 already covers it; run the statement below only for an account scoped more narrowly than that. Without the flag the connector does not read this table, routines sync without their privilege grants, and it refuses to grant or revoke them.
 
 ```mysql
 GRANT SELECT (Host, User, Db, Routine_name, Routine_type, Proc_priv) ON mysql.procs_priv TO conductorone;

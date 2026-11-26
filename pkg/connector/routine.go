@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/conductorone/baton-mysql/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -13,8 +16,9 @@ import (
 )
 
 type routineSyncer struct {
-	resourceType *v2.ResourceType
-	client       *client.Client
+	resourceType      *v2.ResourceType
+	client            *client.Client
+	syncRoutineGrants bool
 }
 
 func (s *routineSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -63,10 +67,11 @@ func (s *routineSyncer) Grants(ctx context.Context, resource *v2.Resource, pToke
 	return nil, "", nil, nil
 }
 
-func newRoutineSyncer(c *client.Client) *routineSyncer {
+func newRoutineSyncer(c *client.Client, syncRoutineGrants bool) *routineSyncer {
 	return &routineSyncer{
-		resourceType: resourceTypeRoutine,
-		client:       c,
+		resourceType:      resourceTypeRoutine,
+		client:            c,
+		syncRoutineGrants: syncRoutineGrants,
 	}
 }
 
@@ -101,6 +106,22 @@ func parseRoutineEntitlement(entitlementID string) (string, string, string, erro
 	return privilege, schema, routineName, nil
 }
 
+// provisionable reports whether a routine privilege may be changed. The sync reads
+// mysql.procs_priv only with syncRoutineGrants, so without it a granted privilege is
+// absent from the next sync and ConductorOne deletes the grant it just made, while the
+// privilege stays in MySQL and can no longer be revoked from ConductorOne. Refusing is
+// visible; granting into that gap is not.
+func (s *routineSyncer) provisionable() error {
+	if !s.syncRoutineGrants {
+		return status.Error(
+			codes.FailedPrecondition,
+			"baton-mysql: routine privileges are not synced, so granting or revoking one would be undone by the next sync. "+
+				"Set --sync-routine-grants (BATON_SYNC_ROUTINE_GRANTS) to manage them",
+		)
+	}
+	return nil
+}
+
 func (s *routineSyncer) routineAccount(principal *v2.Resource) (string, error) {
 	switch principal.Id.ResourceType {
 	case resourceTypeUser.Id:
@@ -116,6 +137,10 @@ func (s *routineSyncer) routineAccount(principal *v2.Resource) (string, error) {
 }
 
 func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	if err := s.provisionable(); err != nil {
+		return nil, err
+	}
+
 	privilege, schema, routineName, err := parseRoutineEntitlement(entitlement.Id)
 	if err != nil {
 		return nil, err
@@ -135,6 +160,10 @@ func (s *routineSyncer) Grant(ctx context.Context, principal *v2.Resource, entit
 }
 
 func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	if err := s.provisionable(); err != nil {
+		return nil, err
+	}
+
 	privilege, schema, routineName, err := parseRoutineEntitlement(grant.Entitlement.Id)
 	if err != nil {
 		return nil, err
@@ -147,7 +176,7 @@ func (s *routineSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotation
 
 	err = s.client.RevokeRoutinePrivilege(ctx, privilege, schema, routineName, user)
 	switch {
-	case errors.Is(err, client.ErrRoutineGrantNotFound), errors.Is(err, client.ErrRoutineNotFound):
+	case errors.Is(err, client.ErrRoutineGrantNotFound):
 		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
 	case err != nil:
 		return nil, fmt.Errorf("baton-mysql: failed to revoke %s on %s.%s from %s: %w", privilege, schema, routineName, user, err)

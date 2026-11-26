@@ -55,11 +55,21 @@ The connection string format is: `username:password@tcp(hostname:3306)/`
 ### Routine Privilege Grants
 
 Who holds a privilege on a stored procedure or function is read from `mysql.procs_priv`,
-which the connector queries only with `--sync-routine-grants`. The flag is off by default
-because the table needs its own `SELECT` grant, which an existing connector account set up
-from the Advanced Setup instructions does not hold. With the flag off, routines and their
-entitlements sync as before and carry no grants. With it on, a denied read fails the sync
-and names the `GRANT` statement to run.
+which the connector queries only with `--sync-routine-grants`. An account that holds
+`GRANT SELECT ON *.*`, which the Advanced Setup instructions grant, already reads the
+table; a column grant on it is needed only for an account scoped more narrowly than that.
+The flag is off by default so that an upgrade changes nothing for an account the read
+would fail on. With it on, a denied read fails the sync and names the `GRANT` to run.
+
+The flag gates grant and revoke as well as the sync. With it off the connector refuses to
+change a routine privilege, because a privilege it granted would be absent from the next
+sync, ConductorOne would delete the grant, and the privilege would stay in MySQL with no
+way to revoke it from ConductorOne.
+
+Turning the flag off after it has been on has the same effect in reverse: the next sync
+reports no routine grants, and ConductorOne reads their absence as a revocation of every
+one of them. The routine resources and their entitlements survive either way, since the
+flag gates only the read.
 
 ### Routines That Share a Name
 

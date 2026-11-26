@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -113,7 +114,39 @@ type Client struct {
 	db      *sqlx.DB
 	version string
 
-	reportedAmbiguousRoutines sync.Map
+	skippedAmbiguousRoutines skipCounter
+	skippedDottedSchemas     skipCounter
+}
+
+// skipCounter counts, per distinct key, how often the client has dropped a row for
+// one reason, and decides which of those occurrences is logged.
+type skipCounter struct {
+	counts sync.Map // string -> *atomic.Int64
+}
+
+// record counts one skip of key and returns the running total together with whether
+// this occurrence falls on the sampling schedule. The client outlives any single
+// sync, so reporting a key once would announce a condition on the first sync and
+// stay silent while it keeps dropping rows on every sync after it.
+func (s *skipCounter) record(key string) (int64, bool) {
+	v, _ := s.counts.LoadOrStore(key, new(atomic.Int64))
+	counter, ok := v.(*atomic.Int64)
+	if !ok {
+		return 0, false
+	}
+	n := counter.Add(1)
+	return n, sampled(n)
+}
+
+// sampled reports the occurrences the review criteria ask a recurrent warning to
+// log: the 1st, 10th and 100th, then every 1000th.
+func sampled(n int64) bool {
+	switch n {
+	case 1, 10, 100:
+		return true
+	default:
+		return n >= 1000 && n%1000 == 0
+	}
 }
 
 func (c *Client) IsVersion8() bool {

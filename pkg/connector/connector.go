@@ -76,7 +76,7 @@ func (c *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.Reso
 		newServerSyncer(c.client),
 		newDatabaseSyncer(c.client, c.skipDbs),
 		newTableSyncer(c.client, c.expandCols),
-		newRoutineSyncer(c.client),
+		newRoutineSyncer(c.client, c.syncRoutineGrants),
 		newUserSyncer(c.client, c.skipDbs, c.expandCols, c.collapseUsers, c.syncRoutineGrants),
 	}
 
