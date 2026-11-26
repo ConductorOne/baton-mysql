@@ -71,9 +71,7 @@ CASE WHEN Alter_routine_priv = 'Y' THEN 'alter_routine,' ELSE '' END,
 CASE WHEN Create_user_priv = 'Y' THEN 'create_user,' ELSE '' END,
 CASE WHEN Event_priv = 'Y' THEN 'event,' ELSE '' END,
 CASE WHEN Trigger_priv = 'Y' THEN 'trigger,' ELSE '' END,
-CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END,
-CASE WHEN Create_role_priv = 'Y' THEN 'create_role,' ELSE '' END,
-CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END`)
+CASE WHEN Create_tablespace_priv = 'Y' THEN 'create_tablespace,' ELSE '' END`)
 	if err != nil {
 		return err
 	}
@@ -95,7 +93,11 @@ CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END
 	return nil
 }
 
-// GetUser returns a single user@host row and its perms
+// GetUser returns a single user@host row and its perms. The row is the account
+// itself, so sql.ErrNoRows means mysql.user holds no such account: it was dropped,
+// or it never existed. A denied read fails with a MySQL error instead, never with
+// ErrNoRows, so a caller may treat ErrNoRows as "the account is gone" and must not
+// treat any other error that way.
 // Grants required:
 //
 //	GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, Create_priv, Drop_priv, Reload_priv,
@@ -134,7 +136,7 @@ func (c *Client) GetUser(ctx context.Context, user string, host string) (*User, 
 
 func (c *Client) getUserGroupedByHostQuery() (*strings.Builder, error) {
 	sb := &strings.Builder{}
-	_, err := sb.WriteString(`SELECT User, GROUP_CONCAT(Host) as Host, 'user' AS user_type FROM mysql.user `)
+	_, err := sb.WriteString(`SELECT User, GROUP_CONCAT(Host ORDER BY Host) as Host, 'user' AS user_type FROM mysql.user `)
 	return sb, err
 }
 

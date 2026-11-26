@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,9 +33,12 @@ func grantsForUserOrRole(
 		return nil, fmt.Errorf("baton-mysql: malformed principal ID %s: %w", resource.Id.Resource, err)
 	}
 
+	// Roles are never collapsed, so only a user principal carries a multi-host ID.
+	holderCollapsed := collapseUsers && resource.Id.ResourceType == resourceTypeUser.Id
+
 	hosts := []string{host}
 	// If we are collapsing users, we will want to split the host portion of the ID to inspect each real user's grants
-	if collapseUsers {
+	if holderCollapsed {
 		hosts = strings.Split(host, ",")
 	}
 
@@ -64,7 +69,7 @@ func grantsForUserOrRole(
 		}
 
 		if c.IsVersion8() {
-			err = listRoleGrants(ctx, user, host, grantMap, c)
+			err = listRoleGrants(ctx, user, host, grantMap, c, collapseUsers, holderCollapsed)
 			if err != nil {
 				return nil, err
 			}
@@ -114,13 +119,15 @@ func listGlobalGrants(
 ) error {
 	u, err := c.GetUser(ctx, user, host)
 	if err != nil {
-		ctxzap.Extract(ctx).Error(
-			"unable to fetch to user for global grant. Ignoring grants",
-			zap.Error(err),
-			zap.String("user", user),
-			zap.String("host", host),
-		)
-		return nil
+		if errors.Is(err, sql.ErrNoRows) {
+			ctxzap.Extract(ctx).Debug(
+				"account not found. Ignoring its global grants",
+				zap.String("user", user),
+				zap.String("host", host),
+			)
+			return nil
+		}
+		return fmt.Errorf("baton-mysql: unable to fetch account %s@%s for global grants: %w", user, host, err)
 	}
 
 	if c.IsVersion8() {
@@ -242,13 +249,7 @@ func listColumnGrants(
 func listProxyGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
 	proxyGrants, err := c.ListProxyGrants(ctx, user, host)
 	if err != nil {
-		ctxzap.Extract(ctx).Error(
-			"unable to fetch to proxy grants. ignoring",
-			zap.Error(err),
-			zap.String("user", user),
-			zap.String("host", host),
-		)
-		return nil
+		return fmt.Errorf("baton-mysql: unable to list proxy grants for %s@%s: %w", user, host, err)
 	}
 
 	for _, g := range proxyGrants {
@@ -262,8 +263,14 @@ func listProxyGrants(ctx context.Context, user, host string, grantMap map[string
 }
 
 // listRoleGrants returns a map keyed by entitlement ID for granted role edges.
-func listRoleGrants(ctx context.Context, user, host string, grantMap map[string]struct{}, c *client.Client) error {
-	roleGrants, err := c.ListRoleGrants(ctx, user, host)
+func listRoleGrants(
+	ctx context.Context,
+	user, host string,
+	grantMap map[string]struct{},
+	c *client.Client,
+	collapseUsers, holderCollapsed bool,
+) error {
+	roleGrants, err := c.ListRoleGrants(ctx, user, host, collapseUsers, holderCollapsed)
 	if err != nil {
 		return err
 	}
