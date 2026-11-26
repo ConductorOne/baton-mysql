@@ -290,7 +290,7 @@ func (c *Client) ListProxyGrants(ctx context.Context, user string, host string) 
 				)
 				continue
 			}
-			return nil, fmt.Errorf("baton-mysql: unable to fetch proxied account: %w", err)
+			return nil, fmt.Errorf("unable to fetch proxied account %s@%s: %w", r.ProxiedUser, r.ProxiedHost, err)
 		}
 		newR.Id = u.GetID()
 		ret = append(ret, newR)

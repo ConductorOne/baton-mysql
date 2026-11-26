@@ -93,7 +93,11 @@ CASE WHEN Drop_role_priv = 'Y' THEN 'drop_role,' ELSE '' END
 	return nil
 }
 
-// GetUser returns a single user@host row and its perms
+// GetUser returns a single user@host row and its perms. The row is the account
+// itself, so sql.ErrNoRows means mysql.user holds no such account: it was dropped,
+// or it never existed. A denied read fails with a MySQL error instead, never with
+// ErrNoRows, so a caller may treat ErrNoRows as "the account is gone" and must not
+// treat any other error that way.
 // Grants required:
 //
 //	GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, Create_priv, Drop_priv, Reload_priv,

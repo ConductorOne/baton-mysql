@@ -98,7 +98,7 @@ GRANT SELECT (Host, User, Select_priv, Insert_priv, Update_priv,  Delete_priv, C
 GRANT SELECT (FROM_HOST, FROM_USER, TO_HOST, TO_USER, WITH_ADMIN_OPTION) ON mysql.role_edges TO conductorone;
 ```
 
-3. Grant your new user SELECT on each of the databases that you would like the connector to scan. In all likelihood, you will want this to be all databases. The connector does not look at any data within the databases, but `SELECT` is required in order to introspect the various schemas.
+3. Grant your new user `SELECT` on all databases. This grant is required: the connector uses it to list databases and introspect their schemas, and it covers `mysql.proxies_priv`, which the column grants above do not include. Scoping it to individual schemas instead fails the sync. The connector does not read the data in your tables.
 
 ```mysql
 GRANT SELECT ON *.* TO conductorone;
